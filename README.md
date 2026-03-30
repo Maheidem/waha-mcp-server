@@ -5,13 +5,13 @@
 [![Node.js](https://img.shields.io/badge/node-%3E%3D18-brightgreen)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-blue)](https://www.typescriptlang.org)
 
-A [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server that lets Claude interact with WhatsApp through the [WAHA](https://waha.devlike.pro/) (WhatsApp HTTP API) REST API. 8 tools for reading chats, sending messages, managing contacts, and reacting to messages.
+A [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server that lets Claude interact with WhatsApp through the [WAHA](https://waha.devlike.pro/) (WhatsApp HTTP API) REST API. 9 tools for reading chats, sending messages, downloading media, managing contacts, and reacting to messages.
 
 Built with TypeScript, the MCP SDK, and Axios. Stdio transport, zero browser dependencies.
 
 ## Features
 
-- **8 Tools** -- Check session, list chats, read messages, send text, react, verify numbers, list contacts
+- **9 Tools** -- Check session, list chats, read messages, download media, send text, react, verify numbers, list contacts
 - **Rate-Limited Sends** -- Built-in throttle between outbound messages to avoid WhatsApp detection
 - **Pagination** -- All list endpoints support limit/offset for large datasets
 - **Graceful Errors** -- WAHA API errors mapped to clear, actionable MCP error messages
@@ -150,6 +150,17 @@ React to a message with an emoji. Send an empty string to remove a reaction.
 | `chatId` | string | Yes | Chat ID where the message is |
 | `messageId` | string | Yes | Message ID to react to |
 | `reaction` | string | Yes | Emoji to react with (empty string removes reaction) |
+
+### Media
+
+#### `whatsapp_download_media`
+
+Download media (image, audio, video, document) from a WhatsApp message. Images and audio are returned inline so Claude can see/hear them directly. Videos and documents are saved to `/tmp/whatsapp-media/`.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `chatId` | string | Yes | Chat ID containing the message |
+| `messageId` | string | Yes | Message ID with media (from `whatsapp_read_messages` with `hasMedia: true`) |
 
 ### Contacts
 

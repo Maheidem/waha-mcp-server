@@ -44,6 +44,21 @@ export class WahaClient {
   }
 
   /**
+   * Download binary data from a WAHA media URL.
+   * The path should be relative (e.g., "/files/default/xxx.jpeg").
+   */
+  async download(path: string): Promise<{ data: Buffer; mimeType: string }> {
+    const response = await this.http.get(path, {
+      responseType: "arraybuffer",
+      headers: { Accept: "*/*" },
+    });
+    return {
+      data: Buffer.from(response.data as ArrayBuffer),
+      mimeType: (response.headers["content-type"] as string) || "application/octet-stream",
+    };
+  }
+
+  /**
    * Enforce minimum delay between outbound messages to avoid WhatsApp detection.
    * Call this before any send operation.
    */
