@@ -3,7 +3,7 @@ import * as path from "node:path";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { WahaClient } from "../services/waha-client.js";
-import type { WahaMessage } from "../types.js";
+import type { WahaMessage, WahaConfig, WahaSendResult } from "../types.js";
 import { parseWahaError, mcpError } from "../utils/errors.js";
 
 const MEDIA_DIR = "/tmp/whatsapp-media";
@@ -21,7 +21,7 @@ function extractMediaPath(url: string): string {
   throw new Error(`Cannot parse media path from URL: ${url}`);
 }
 
-export function registerMediaTools(server: McpServer, client: WahaClient): void {
+export function registerMediaTools(server: McpServer, client: WahaClient, config: WahaConfig): void {
   server.registerTool(
     "whatsapp_download_media",
     {
@@ -147,6 +147,140 @@ Returns:
               }, null, 2),
             },
           ],
+        };
+      } catch (error) {
+        return mcpError(parseWahaError(error));
+      }
+    }
+  );
+
+  // ─── whatsapp_transcribe_audio ──────────────────────────────────
+  server.registerTool(
+    "whatsapp_transcribe_audio",
+    {
+      title: "Transcribe WhatsApp Audio",
+      description: `Transcribe a WhatsApp voice message or audio to text.
+
+Downloads the audio, sends it to a speech-to-text service (OpenAI Whisper or compatible),
+and returns the transcription. Optionally replies to the original message with the text.
+
+Requires WAHA_TRANSCRIPTION_API_KEY to be configured.
+
+Args:
+  - chatId: Chat ID containing the audio message
+  - messageId: Message ID of the audio to transcribe
+  - replyWithTranscription: If true, sends the transcription as a WhatsApp reply to the audio message (default false)
+
+Returns:
+  - transcription: The transcribed text
+  - language: Detected language (if available)
+  - replyMessageId: ID of the reply message (if replyWithTranscription=true)`,
+      inputSchema: {
+        chatId: z.string().min(1).describe("Chat ID containing the audio message"),
+        messageId: z.string().min(1).describe("Message ID of the audio to transcribe"),
+        replyWithTranscription: z.coerce.boolean().default(false)
+          .describe("If true, sends the transcription as a WhatsApp reply to the audio (default false)"),
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: true,
+      },
+    },
+    async ({ chatId, messageId, replyWithTranscription }) => {
+      try {
+        // 0. Check transcription is configured
+        if (!config.transcription) {
+          return mcpError(
+            "Transcription is not configured. Set WAHA_TRANSCRIPTION_API_KEY " +
+            "(and optionally WAHA_TRANSCRIPTION_URL, WAHA_TRANSCRIPTION_MODEL) " +
+            "in your MCP server environment."
+          );
+        }
+        const tc = config.transcription;
+
+        // 1. Fetch the message
+        const message = await client.get<WahaMessage>(
+          `/${client.session}/chats/${chatId}/messages/${messageId}`,
+          { downloadMedia: true }
+        );
+
+        if (!message.hasMedia || !message.media?.url) {
+          return mcpError(
+            "This message has no media. Make sure you're targeting an audio/voice message."
+          );
+        }
+
+        const mime = message.media.mimetype || "";
+        if (!mime.includes("audio") && !mime.includes("ogg") && !mime.includes("voice")) {
+          return mcpError(
+            `This message contains ${mime}, not audio. Use whatsapp_download_media for non-audio files.`
+          );
+        }
+
+        // 2. Download the audio binary
+        const mediaPath = extractMediaPath(message.media.url);
+        const { data } = await client.download(mediaPath);
+
+        // 3. Transcribe via OpenAI-compatible API
+        const ext = mime.includes("ogg") ? "ogg" : mime.split("/")[1]?.split(";")[0] || "ogg";
+        const formData = new FormData();
+        const arrayBuffer = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer;
+        formData.append("file", new Blob([arrayBuffer], { type: mime }), `audio.${ext}`);
+        formData.append("model", tc.model);
+        if (tc.language) {
+          formData.append("language", tc.language);
+        }
+
+        const response = await fetch(tc.url, {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${tc.apiKey}`,
+          },
+          body: formData,
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          return mcpError(
+            `Transcription failed (${response.status}): ${errorText.slice(0, 500)}`
+          );
+        }
+
+        const result = await response.json() as { text: string; language?: string };
+        const transcription = result.text;
+
+        // 4. Optionally reply with transcription
+        let replyMessageId: string | undefined;
+        if (replyWithTranscription && transcription) {
+          await client.throttleSend();
+          const replyPrefix = "\u{1F4DD} *Transcrição:*\n\n";
+          const sendResult = await client.post<WahaSendResult>("/sendText", {
+            chatId,
+            text: `${replyPrefix}${transcription}`,
+            session: client.session,
+            reply_to: messageId,
+          });
+          replyMessageId = sendResult.id;
+        }
+
+        // 5. Return to Claude
+        const output: Record<string, unknown> = {
+          transcription,
+          messageId,
+          chatId,
+          language: result.language || tc.language || "auto",
+          audioSizeBytes: data.length,
+          model: tc.model,
+        };
+        if (replyMessageId) {
+          output.replyMessageId = replyMessageId;
+          output.replySent = true;
+        }
+
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify(output, null, 2) }],
         };
       } catch (error) {
         return mcpError(parseWahaError(error));

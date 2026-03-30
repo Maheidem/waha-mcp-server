@@ -86,10 +86,19 @@ export interface WahaErrorResponse {
   };
 }
 
+/** Transcription service config (optional) */
+export interface TranscriptionConfig {
+  url: string;
+  apiKey: string;
+  model: string;
+  language?: string;
+}
+
 /** Config loaded from environment variables */
 export interface WahaConfig {
   apiUrl: string;
   apiKey: string;
   session: string;
   sendDelayMs: number;
+  transcription?: TranscriptionConfig;
 }

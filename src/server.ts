@@ -13,7 +13,7 @@ export function createServer(config: WahaConfig): McpServer {
   });
 
   const client = new WahaClient(config);
-  registerAllTools(server, client);
+  registerAllTools(server, client, config);
 
   return server;
 }

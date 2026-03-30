@@ -5,13 +5,13 @@
 [![Node.js](https://img.shields.io/badge/node-%3E%3D18-brightgreen)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-blue)](https://www.typescriptlang.org)
 
-A [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server that lets Claude interact with WhatsApp through the [WAHA](https://waha.devlike.pro/) (WhatsApp HTTP API) REST API. 9 tools for reading chats, sending messages, downloading media, managing contacts, and reacting to messages.
+A [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server that lets Claude interact with WhatsApp through the [WAHA](https://waha.devlike.pro/) (WhatsApp HTTP API) REST API. 10 tools for reading chats, sending messages, downloading media, transcribing voice messages, managing contacts, and reacting to messages.
 
 Built with TypeScript, the MCP SDK, and Axios. Stdio transport, zero browser dependencies.
 
 ## Features
 
-- **9 Tools** -- Check session, list chats, read messages, download media, send text, react, verify numbers, list contacts
+- **10 Tools** -- Check session, list chats, read messages, download media, transcribe audio, send text, react, verify numbers, list contacts
 - **Rate-Limited Sends** -- Built-in throttle between outbound messages to avoid WhatsApp detection
 - **Pagination** -- All list endpoints support limit/offset for large datasets
 - **Graceful Errors** -- WAHA API errors mapped to clear, actionable MCP error messages
@@ -81,6 +81,10 @@ Add to `.cursor/mcp.json` in your project root:
 | `WAHA_API_KEY` | **Yes** | -- | WAHA API key for authentication |
 | `WAHA_SESSION` | No | `default` | WAHA session name |
 | `WAHA_SEND_DELAY_MS` | No | `1000` | Minimum delay (ms) between outbound messages |
+| `WAHA_TRANSCRIPTION_API_KEY` | No | -- | API key for transcription (OpenAI, Groq, or self-hosted) |
+| `WAHA_TRANSCRIPTION_URL` | No | `https://api.openai.com/v1/audio/transcriptions` | Transcription endpoint (any OpenAI-compatible API) |
+| `WAHA_TRANSCRIPTION_MODEL` | No | `whisper-1` | Transcription model (`whisper-1` for OpenAI, `large-v3` for faster-whisper) |
+| `WAHA_TRANSCRIPTION_LANGUAGE` | No | auto-detect | Language hint (ISO 639-1, e.g., `pt` for Portuguese) |
 
 ## Tools
 
@@ -161,6 +165,18 @@ Download media (image, audio, video, document) from a WhatsApp message. Images a
 |-----------|------|----------|-------------|
 | `chatId` | string | Yes | Chat ID containing the message |
 | `messageId` | string | Yes | Message ID with media (from `whatsapp_read_messages` with `hasMedia: true`) |
+
+#### `whatsapp_transcribe_audio`
+
+Transcribe a WhatsApp voice message to text using OpenAI Whisper (or any compatible API). Optionally replies to the audio message with the transcription.
+
+Requires `WAHA_TRANSCRIPTION_API_KEY` to be configured.
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `chatId` | string | Yes | -- | Chat ID containing the audio message |
+| `messageId` | string | Yes | -- | Message ID of the audio to transcribe |
+| `replyWithTranscription` | boolean | No | false | If true, sends transcription as a WhatsApp reply to the audio |
 
 ### Contacts
 
