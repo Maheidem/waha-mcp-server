@@ -73,9 +73,16 @@ Returns array of chats with:
 Returns messages with sender, text content, timestamp, and message ID.
 Use the message ID from results for whatsapp_react or reply_to in whatsapp_send_text.
 
+Supports pagination via offset to go back in time, and timestamp filters to read
+messages from a specific date range.
+
 Args:
   - chatId: Chat ID to read from (e.g., "5511999999999@c.us" for contacts, "id@g.us" for groups)
   - limit: Number of messages to return (1-100, default 20)
+  - offset: Skip N messages for pagination (default 0). Use to go further back in history.
+  - timestampFrom: Only messages after this Unix timestamp (seconds). Example: 1709251200 for March 1 2024.
+  - timestampTo: Only messages before this Unix timestamp (seconds).
+  - fromMe: Filter to only sent (true) or only received (false) messages.
   - downloadMedia: Include media download URLs (default false, faster without)
 
 Returns array of messages with:
@@ -89,6 +96,14 @@ Returns array of messages with:
         chatId: z.string().min(1).describe("Chat ID to read messages from"),
         limit: z.coerce.number().int().min(1).max(MAX_LIMIT).default(DEFAULT_LIMIT)
           .describe("Number of messages to return (1-100, default 20)"),
+        offset: z.coerce.number().int().min(0).default(0)
+          .describe("Skip N messages for pagination (default 0). Use to go further back in history."),
+        timestampFrom: z.coerce.number().int().optional()
+          .describe("Only messages after this Unix timestamp (seconds). E.g., 1709251200 for March 1 2024."),
+        timestampTo: z.coerce.number().int().optional()
+          .describe("Only messages before this Unix timestamp (seconds)."),
+        fromMe: z.coerce.boolean().optional()
+          .describe("Filter: true = only sent messages, false = only received messages."),
         downloadMedia: z.coerce.boolean().default(false)
           .describe("Include media download URLs (default false)"),
       },
@@ -99,11 +114,20 @@ Returns array of messages with:
         openWorldHint: true,
       },
     },
-    async ({ chatId, limit, downloadMedia }) => {
+    async ({ chatId, limit, offset, timestampFrom, timestampTo, fromMe, downloadMedia }) => {
       try {
+        const params: Record<string, string | number | boolean> = {
+          limit,
+          offset,
+          downloadMedia,
+        };
+        if (timestampFrom !== undefined) params["filter.timestamp.gte"] = timestampFrom;
+        if (timestampTo !== undefined) params["filter.timestamp.lte"] = timestampTo;
+        if (fromMe !== undefined) params["filter.fromMe"] = fromMe;
+
         const messages = await client.get<WahaMessage[]>(
           `/${client.session}/chats/${chatId}/messages`,
-          { limit, downloadMedia }
+          params
         );
 
         const result = {
@@ -118,6 +142,8 @@ Returns array of messages with:
             ack: m.ackName,
           })),
           count: messages.length,
+          offset,
+          hasMore: messages.length === limit,
         };
 
         // Truncate if response is too large
@@ -127,7 +153,7 @@ Returns array of messages with:
             ...result,
             messages: result.messages.slice(0, Math.ceil(result.messages.length / 2)),
             truncated: true,
-            truncationNote: `Response truncated. Use a smaller 'limit' to see all messages.`,
+            truncationNote: `Response truncated. Use a smaller 'limit' or increase 'offset' to paginate.`,
           };
           text = JSON.stringify(truncated, null, 2);
         }
