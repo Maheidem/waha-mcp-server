@@ -1,7 +1,7 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { createServer } from "../../server.js";
-import type { WahaConfig } from "../../types.js";
+import type { WahaConfig, MessageStoreConfig } from "../../types.js";
 
 // ─── Test contacts ──────────────────────────────────────────────────
 export const SELF_CHAT_ID = "5524992272331@c.us";
@@ -33,11 +33,23 @@ export function loadTestConfig(): WahaConfig {
       "Integration tests require WAHA_API_URL and WAHA_API_KEY environment variables"
     );
   }
+  // Message Store is optional — only configure if env vars are present
+  let store: MessageStoreConfig | undefined;
+  const storeUrl = process.env.WAHA_STORE_URL;
+  const storeApiKey = process.env.WAHA_STORE_API_KEY;
+  if (storeUrl && storeApiKey) {
+    store = {
+      url: storeUrl.replace(/\/+$/, ""),
+      apiKey: storeApiKey,
+    };
+  }
+
   return {
     apiUrl: apiUrl.replace(/\/+$/, ""),
     apiKey,
     session: process.env.WAHA_SESSION || "default",
     sendDelayMs: 100, // Faster for tests (still safe with small test volume)
+    store,
   };
 }
 

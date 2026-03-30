@@ -1,12 +1,17 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { WahaClient } from "../services/waha-client.js";
+import type { MessageStoreClient } from "../services/message-store-client.js";
 import type { WahaChatOverview, WahaMessage } from "../types.js";
 import { DEFAULT_LIMIT, MAX_LIMIT, CHARACTER_LIMIT } from "../constants.js";
-import { parseWahaError, mcpError } from "../utils/errors.js";
+import { parseWahaError, parseStoreError, mcpError } from "../utils/errors.js";
 import { formatTimestamp, extractMessageBody } from "../utils/formatting.js";
 
-export function registerChatTools(server: McpServer, client: WahaClient): void {
+export function registerChatTools(
+  server: McpServer,
+  client: WahaClient,
+  storeClient: MessageStoreClient | null = null,
+): void {
   server.registerTool(
     "whatsapp_list_chats",
     {
@@ -94,42 +99,47 @@ Returns array of chats with:
 Returns messages with sender, text content, timestamp, and message ID.
 Use the message ID from results for whatsapp_react or reply_to in whatsapp_send_text.
 
-Supports pagination via offset to go back in time, and timestamp filters to read
-messages from a specific date range.
+${storeClient ? "Powered by Message Store — persistent full history with full-text search and sender filtering." : "Using WAHA directly — in-memory history only."}
 
 Args:
   - chatId: Chat ID to read from (e.g., "5511999999999@c.us" for contacts, "id@g.us" for groups)
   - limit: Number of messages to return (1-100, default 20)
-  - offset: Skip N messages for pagination (default 0). Use to go further back in history.
-  - timestampFrom: Only messages after this Unix timestamp (seconds). Example: 1709251200 for March 1 2024.
-  - timestampTo: Only messages before this Unix timestamp (seconds).
-  - fromMe: Filter to only sent (true) or only received (false) messages.
-  - downloadMedia: Include media download URLs (default false, faster without)
-  - markAsRead: Mark messages as read after fetching (default false). Use when triaging inbox.
+  - offset: Skip N messages for pagination (default 0)
+  - search: Full-text search within this chat's messages (optional${storeClient ? "" : ", requires Message Store"})
+  - sender: Filter by sender name or JID (optional${storeClient ? "" : ", requires Message Store"})
+  - type: Filter by message type: chat, image, album (optional${storeClient ? "" : ", requires Message Store"})
+  - since: ISO date — messages after this date (optional)
+  - until: ISO date — messages before this date (optional)
+  - fromMe: Filter sent (true) or received (false) messages (optional)
+  - downloadMedia: Include media download URLs (default false, WAHA only)
+  - markAsRead: Mark messages as read after fetching (default false, WAHA only)
 
-Returns array of messages with:
-  - id: Message ID (use for reactions/replies)
-  - from: Sender's chat ID
-  - fromMe: Whether you sent this message
-  - body: Message text or description
-  - timestamp: ISO timestamp
-  - hasMedia: Whether message contains media`,
+Returns:
+  - messages: Array with id, sender, body, timestamp, type, fromMe, hasMedia
+  - total: Total matching messages (Message Store only)
+  - hasMore: Whether more results exist`,
       inputSchema: {
         chatId: z.string().min(1).describe("Chat ID to read messages from"),
         limit: z.coerce.number().int().min(1).max(MAX_LIMIT).default(DEFAULT_LIMIT)
           .describe("Number of messages to return (1-100, default 20)"),
         offset: z.coerce.number().int().min(0).default(0)
-          .describe("Skip N messages for pagination (default 0). Use to go further back in history."),
-        timestampFrom: z.coerce.number().int().optional()
-          .describe("Only messages after this Unix timestamp (seconds). E.g., 1709251200 for March 1 2024."),
-        timestampTo: z.coerce.number().int().optional()
-          .describe("Only messages before this Unix timestamp (seconds)."),
+          .describe("Skip N messages for pagination (default 0)"),
+        search: z.string().max(500).optional()
+          .describe("Full-text search within this chat (optional, Message Store only)"),
+        sender: z.string().max(500).optional()
+          .describe("Filter by sender name or JID (optional, Message Store only)"),
+        type: z.string().max(50).optional()
+          .describe("Filter by message type: chat, image, album (optional, Message Store only)"),
+        since: z.string().max(30).optional()
+          .describe("ISO date — only messages after this date (optional)"),
+        until: z.string().max(30).optional()
+          .describe("ISO date — only messages before this date (optional)"),
         fromMe: z.coerce.boolean().optional()
-          .describe("Filter: true = only sent messages, false = only received messages."),
+          .describe("Filter: true = sent, false = received (optional)"),
         downloadMedia: z.coerce.boolean().default(false)
-          .describe("Include media download URLs (default false)"),
+          .describe("Include media download URLs (WAHA only, default false)"),
         markAsRead: z.coerce.boolean().default(false)
-          .describe("Mark messages as read after fetching (default false). Use when triaging inbox."),
+          .describe("Mark messages as read after fetching (WAHA only, default false)"),
       },
       annotations: {
         readOnlyHint: false,
@@ -138,70 +148,149 @@ Returns array of messages with:
         openWorldHint: true,
       },
     },
-    async ({ chatId, limit, offset, timestampFrom, timestampTo, fromMe, downloadMedia, markAsRead }) => {
+    async ({ chatId, limit, offset, search, sender, type, since, until, fromMe, downloadMedia, markAsRead }) => {
       try {
-        const params: Record<string, string | number | boolean> = {
-          limit,
-          offset,
-          downloadMedia,
+        // Helper: query WAHA directly (used as primary or fallback)
+        const queryWaha = async () => {
+          const params: Record<string, string | number | boolean> = {
+            limit,
+            offset,
+            downloadMedia,
+          };
+          if (since !== undefined) {
+            const ts = Math.floor(new Date(since).getTime() / 1000);
+            if (!isNaN(ts)) params["filter.timestamp.gte"] = ts;
+          }
+          if (until !== undefined) {
+            const ts = Math.floor(new Date(until).getTime() / 1000);
+            if (!isNaN(ts)) params["filter.timestamp.lte"] = ts;
+          }
+          if (fromMe !== undefined) params["filter.fromMe"] = fromMe;
+
+          const messages = await client.get<WahaMessage[]>(
+            `/${client.session}/chats/${chatId}/messages`,
+            params
+          );
+
+          if (markAsRead && messages.length > 0) {
+            client.post(`/${client.session}/chats/${chatId}/messages/read`, {}).catch(() => {});
+          }
+
+          return {
+            chatId,
+            messages: messages.map((m) => {
+              const msg: Record<string, unknown> = {
+                id: m.id,
+                from: m.from,
+                fromMe: m.fromMe,
+                body: extractMessageBody(m),
+                timestamp: formatTimestamp(m.timestamp),
+                hasMedia: m.hasMedia,
+                ack: m.ackName,
+              };
+              if (m.media?.url) {
+                const mediaUrl = m.media.url.replace(
+                  /^https?:\/\/localhost:\d+\/api/,
+                  client.baseUrl
+                );
+                msg.media = {
+                  url: mediaUrl,
+                  mimetype: m.media.mimetype,
+                  ...(m.media.filename ? { filename: m.media.filename } : {}),
+                };
+              }
+              return msg;
+            }),
+            count: messages.length,
+            offset,
+            hasMore: messages.length === limit,
+            source: "waha" as const,
+            ...(markAsRead ? { markedAsRead: true } : {}),
+          };
         };
-        if (timestampFrom !== undefined) params["filter.timestamp.gte"] = timestampFrom;
-        if (timestampTo !== undefined) params["filter.timestamp.lte"] = timestampTo;
-        if (fromMe !== undefined) params["filter.fromMe"] = fromMe;
 
-        const messages = await client.get<WahaMessage[]>(
-          `/${client.session}/chats/${chatId}/messages`,
-          params
-        );
-
-        // Mark messages as read if requested
-        if (markAsRead && messages.length > 0) {
-          client.post(`/${client.session}/chats/${chatId}/messages/read`, {}).catch(() => {
-            // Non-critical — don't fail the read if mark-read fails
+        if (storeClient) {
+          // Use Message Store — persistent history with search
+          const data = await storeClient.searchMessages({
+            chat_jid: chatId,
+            search,
+            sender,
+            type,
+            since,
+            until,
+            from_me: fromMe,
+            limit,
+            offset,
           });
+
+          // If Store returns empty for a DM chat (offset 0, no filters),
+          // fall back to WAHA — the Store may not have this chat's messages
+          // (e.g., self-chat, or chat predates webhook capture).
+          const isDm = chatId.endsWith("@c.us");
+          const hasFilters = search || sender || type || since || until || fromMe !== undefined;
+          if (data.messages.length === 0 && isDm && offset === 0 && !hasFilters) {
+            const wahaResult = await queryWaha();
+            let text = JSON.stringify(wahaResult, null, 2);
+            if (text.length > CHARACTER_LIMIT) {
+              const truncated = {
+                ...wahaResult,
+                messages: wahaResult.messages.slice(0, Math.ceil(wahaResult.messages.length / 2)),
+                truncated: true,
+                truncationNote: "Response truncated. Use a smaller 'limit' or increase 'offset'.",
+              };
+              text = JSON.stringify(truncated, null, 2);
+            }
+            return { content: [{ type: "text" as const, text }] };
+          }
+
+          const result = {
+            chatId,
+            messages: data.messages.map((m) => ({
+              id: m.id,
+              senderName: m.sender_name,
+              senderJid: m.sender_jid,
+              fromMe: m.from_me,
+              body: m.body,
+              timestamp: m.timestamp,
+              messageType: m.message_type,
+              hasMedia: m.has_media,
+              mediaMimetype: m.media_mimetype,
+              ack: m.ack,
+              isRevoked: m.is_revoked,
+              isEdited: m.is_edited,
+            })),
+            total: data.total,
+            count: data.messages.length,
+            offset,
+            hasMore: data.has_more,
+            source: "message-store" as const,
+          };
+
+          let text = JSON.stringify(result, null, 2);
+          if (text.length > CHARACTER_LIMIT) {
+            const truncated = {
+              ...result,
+              messages: result.messages.slice(0, Math.ceil(result.messages.length / 2)),
+              truncated: true,
+              truncationNote: "Response truncated. Use a smaller 'limit' or increase 'offset'.",
+            };
+            text = JSON.stringify(truncated, null, 2);
+          }
+
+          return {
+            content: [{ type: "text" as const, text }],
+          };
         }
 
-        const result = {
-          chatId,
-          messages: messages.map((m) => {
-            const msg: Record<string, unknown> = {
-              id: m.id,
-              from: m.from,
-              fromMe: m.fromMe,
-              body: extractMessageBody(m),
-              timestamp: formatTimestamp(m.timestamp),
-              hasMedia: m.hasMedia,
-              ack: m.ackName,
-            };
-            // Include media URL when downloadMedia=true and media exists
-            if (m.media?.url) {
-              // Rewrite internal localhost URL to the configured WAHA API URL
-              const mediaUrl = m.media.url.replace(
-                /^https?:\/\/localhost:\d+\/api/,
-                client.baseUrl
-              );
-              msg.media = {
-                url: mediaUrl,
-                mimetype: m.media.mimetype,
-                ...(m.media.filename ? { filename: m.media.filename } : {}),
-              };
-            }
-            return msg;
-          }),
-          count: messages.length,
-          offset,
-          hasMore: messages.length === limit,
-          ...(markAsRead ? { markedAsRead: true } : {}),
-        };
-
-        // Truncate if response is too large
-        let text = JSON.stringify(result, null, 2);
+        // No Message Store — WAHA directly
+        const wahaResult = await queryWaha();
+        let text = JSON.stringify(wahaResult, null, 2);
         if (text.length > CHARACTER_LIMIT) {
           const truncated = {
-            ...result,
-            messages: result.messages.slice(0, Math.ceil(result.messages.length / 2)),
+            ...wahaResult,
+            messages: wahaResult.messages.slice(0, Math.ceil(wahaResult.messages.length / 2)),
             truncated: true,
-            truncationNote: `Response truncated. Use a smaller 'limit' or increase 'offset' to paginate.`,
+            truncationNote: "Response truncated. Use a smaller 'limit' or increase 'offset'.",
           };
           text = JSON.stringify(truncated, null, 2);
         }
@@ -210,7 +299,7 @@ Returns array of messages with:
           content: [{ type: "text" as const, text }],
         };
       } catch (error) {
-        return mcpError(parseWahaError(error));
+        return mcpError(storeClient ? parseStoreError(error) : parseWahaError(error));
       }
     }
   );

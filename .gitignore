@@ -3,3 +3,5 @@ dist/
 .env
 *.tsbuildinfo
 .mcp.json
+inbox/
+.scratchpad/

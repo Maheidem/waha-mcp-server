@@ -5,13 +5,14 @@
 [![Node.js](https://img.shields.io/badge/node-%3E%3D18-brightgreen)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-blue)](https://www.typescriptlang.org)
 
-A [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server that lets Claude interact with WhatsApp through the [WAHA](https://waha.devlike.pro/) (WhatsApp HTTP API) REST API. 15 tools for reading chats, sending/editing/deleting/forwarding messages, downloading media, transcribing voice messages, managing groups and contacts, and reacting to messages.
+A [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server that lets Claude interact with WhatsApp through the [WAHA](https://waha.devlike.pro/) (WhatsApp HTTP API) REST API. 19 tools for reading chats, sending/editing/deleting/forwarding messages, downloading media, transcribing voice messages, managing groups and contacts, reacting to messages, full-text search, contact graphs, chat summaries, and activity stats.
 
 Built with TypeScript, the MCP SDK, and Axios. Stdio transport, zero browser dependencies.
 
 ## Features
 
-- **15 Tools** -- Check session, list chats (with previews), read messages (with mark-as-read), download media, transcribe audio, send/edit/delete/forward text, react, verify numbers, list contacts, list groups, group info
+- **19 Tools** -- Check session, list chats (with previews), read messages (with mark-as-read), download media, transcribe audio, send/edit/delete/forward text, react, verify numbers, list contacts, list groups, group info, search messages, contact graph, chat summary, stats
+- **Message Store Integration** -- Optional persistent message history with full-text search, contact graphs, chat summaries, and activity stats
 - **Rate-Limited Sends** -- Built-in throttle between outbound messages to avoid WhatsApp detection
 - **Pagination** -- All list endpoints support limit/offset for large datasets
 - **Graceful Errors** -- WAHA API errors mapped to clear, actionable MCP error messages
@@ -85,6 +86,8 @@ Add to `.cursor/mcp.json` in your project root:
 | `WAHA_TRANSCRIPTION_URL` | No | `https://api.openai.com/v1/audio/transcriptions` | Transcription endpoint (any OpenAI-compatible API) |
 | `WAHA_TRANSCRIPTION_MODEL` | No | `whisper-1` | Transcription model (`whisper-1` for OpenAI, `large-v3` for faster-whisper) |
 | `WAHA_TRANSCRIPTION_LANGUAGE` | No | auto-detect | Language hint (ISO 639-1, e.g., `pt` for Portuguese) |
+| `WAHA_STORE_URL` | No | -- | Message Store API base URL (enables search, graph, summary, stats tools) |
+| `WAHA_STORE_API_KEY` | Conditional | -- | Message Store API key (required when `WAHA_STORE_URL` is set) |
 
 ## Tools
 
@@ -246,6 +249,57 @@ List WhatsApp contacts with names and IDs.
 |-----------|------|----------|---------|-------------|
 | `limit` | number (1-100) | No | 20 | Maximum contacts to return |
 | `offset` | number | No | 0 | Pagination offset |
+
+### Message Store (optional)
+
+These tools require a running [Message Store](https://github.com/Maheidem/waha-message-store) API instance. Set `WAHA_STORE_URL` and `WAHA_STORE_API_KEY` to enable them. When the Message Store is configured, `whatsapp_read_messages` and `whatsapp_list_contacts` are also upgraded with persistent history, full-text search, and activity stats.
+
+#### `whatsapp_search_messages`
+
+Search across all WhatsApp message history. Supports full-text search, date ranges, sender filtering, and message type filtering.
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `search` | string | Yes | -- | Text to search for (case insensitive) |
+| `chatId` | string | No | -- | Scope search to a specific chat JID |
+| `sender` | string | No | -- | Filter by sender name or JID |
+| `since` | string | No | -- | ISO date string -- messages after this date |
+| `until` | string | No | -- | ISO date string -- messages before this date |
+| `type` | string | No | -- | Message type filter: `chat`, `image`, `album`, `e2e_notification` |
+| `fromMe` | boolean | No | -- | Filter: `true` = sent, `false` = received |
+| `limit` | number (1-100) | No | 20 | Results per page |
+| `offset` | number | No | 0 | Pagination offset |
+
+#### `whatsapp_contact_graph`
+
+Get social graph for a contact -- shared groups, mutual connections, and interaction stats.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `contactId` | number | Yes | Numeric contact ID from the Message Store |
+
+Returns contact info (name, JID, first/last seen), shared groups with message counts, and mutual connections.
+
+#### `whatsapp_chat_summary`
+
+Get a readable summary of recent messages in a chat, optimized for readability.
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `chatId` | string | Yes | -- | Chat JID (e.g., `5511999999999@c.us` or `id@g.us`) |
+| `limit` | number (1-200) | No | 50 | Number of recent messages to include |
+
+Returns chat metadata (name, type, message count, date range) and messages with sender name, body, timestamp, and type.
+
+#### `whatsapp_stats`
+
+Overview dashboard of WhatsApp activity. No parameters needed.
+
+Returns:
+- **Totals**: messages, contacts, chats, groups, DMs
+- **Activity**: messages today, messages this week
+- **Top 5 chats** by message count
+- **Top 5 contacts** by message count
 
 ## WAHA CORE Tier Limitations
 
