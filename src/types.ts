@@ -25,6 +25,22 @@ export interface WahaChat {
   conversationTimestamp: number;
 }
 
+/** Chat overview from GET /api/{session}/chats/overview */
+export interface WahaChatOverview {
+  id: string;
+  name: string;
+  conversationTimestamp: number;
+  picture?: string | null;
+  lastMessage?: {
+    id: string;
+    body?: string;
+    timestamp: number;
+    from: string;
+    fromMe: boolean;
+    hasMedia: boolean;
+  } | null;
+}
+
 /** Message from GET /api/{session}/chats/{chatId}/messages */
 export interface WahaMessage {
   id: string;

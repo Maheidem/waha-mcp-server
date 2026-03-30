@@ -223,4 +223,61 @@ Returns confirmation of deletion.`,
       }
     }
   );
+
+  // ─── whatsapp_forward_message ───────────────────────────────────
+  server.registerTool(
+    "whatsapp_forward_message",
+    {
+      title: "Forward WhatsApp Message",
+      description: `Forward a message from one chat to another.
+
+The forwarded message shows a "Forwarded" label in WhatsApp and preserves
+the original sender attribution.
+
+Args:
+  - chatId: Destination chat ID to forward the message TO
+  - messageId: Message ID to forward (get from whatsapp_read_messages)
+
+Returns confirmation with forwarded message ID.`,
+      inputSchema: {
+        chatId: z.string().min(1)
+          .describe("Destination chat ID to forward the message TO"),
+        messageId: z.string().min(1)
+          .describe("Message ID to forward (from whatsapp_read_messages)"),
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: true,
+      },
+    },
+    async ({ chatId, messageId }) => {
+      try {
+        await client.throttleSend();
+
+        const result = await client.post<WahaSendResult>("/forwardMessage", {
+          chatId,
+          messageId,
+          session: client.session,
+        });
+
+        const output = {
+          status: "forwarded",
+          messageId: result.id,
+          destinationChatId: chatId,
+          originalMessageId: messageId,
+          timestamp: result.timestamp
+            ? new Date(result.timestamp * 1000).toISOString()
+            : new Date().toISOString(),
+        };
+
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify(output, null, 2) }],
+        };
+      } catch (error) {
+        return mcpError(parseWahaError(error));
+      }
+    }
+  );
 }

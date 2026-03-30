@@ -1,7 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { WahaClient } from "../services/waha-client.js";
-import type { WahaChat, WahaMessage } from "../types.js";
+import type { WahaChatOverview, WahaMessage } from "../types.js";
 import { DEFAULT_LIMIT, MAX_LIMIT, CHARACTER_LIMIT } from "../constants.js";
 import { parseWahaError, mcpError } from "../utils/errors.js";
 import { formatTimestamp, extractMessageBody } from "../utils/formatting.js";
@@ -11,10 +11,10 @@ export function registerChatTools(server: McpServer, client: WahaClient): void {
     "whatsapp_list_chats",
     {
       title: "List WhatsApp Chats",
-      description: `List recent WhatsApp chats (conversations).
+      description: `List recent WhatsApp chats with last message preview and profile pictures.
 
-Returns chat IDs, names, and last message timestamps. Use the chat ID from results
-to read messages with whatsapp_read_messages.
+Returns chat IDs, names, profile picture URLs, and a preview of the last message.
+Use the chat ID from results to read messages with whatsapp_read_messages.
 
 Args:
   - limit: Number of chats to return (1-100, default 20)
@@ -23,6 +23,8 @@ Args:
 Returns array of chats with:
   - id: Chat ID (use this in other tools)
   - name: Contact or group name
+  - picture: Profile picture URL (may expire)
+  - lastMessage: Preview with body, from, fromMe, hasMedia, timestamp
   - lastMessageAt: ISO timestamp of last message`,
       inputSchema: {
         limit: z.coerce.number().int().min(1).max(MAX_LIMIT).default(DEFAULT_LIMIT)
@@ -39,8 +41,8 @@ Returns array of chats with:
     },
     async ({ limit, offset }) => {
       try {
-        const chats = await client.get<WahaChat[]>(
-          `/${client.session}/chats`,
+        const chats = await client.get<WahaChatOverview[]>(
+          `/${client.session}/chats/overview`,
           { limit, offset }
         );
 
@@ -48,15 +50,34 @@ Returns array of chats with:
           chats: chats.map((c) => ({
             id: c.id,
             name: c.name || c.id,
+            picture: c.picture || null,
             lastMessageAt: formatTimestamp(c.conversationTimestamp),
+            lastMessage: c.lastMessage ? {
+              body: (c.lastMessage.body || "").slice(0, 200) || null,
+              from: c.lastMessage.from,
+              fromMe: c.lastMessage.fromMe,
+              hasMedia: c.lastMessage.hasMedia,
+              timestamp: formatTimestamp(c.lastMessage.timestamp),
+            } : null,
           })),
           count: chats.length,
           offset,
           hasMore: chats.length === limit,
         };
 
+        let text = JSON.stringify(result, null, 2);
+        if (text.length > CHARACTER_LIMIT) {
+          const truncated = {
+            ...result,
+            chats: result.chats.slice(0, Math.ceil(result.chats.length / 2)),
+            truncated: true,
+            truncationNote: "Response truncated. Use a smaller 'limit' or increase 'offset'.",
+          };
+          text = JSON.stringify(truncated, null, 2);
+        }
+
         return {
-          content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
+          content: [{ type: "text" as const, text }],
         };
       } catch (error) {
         return mcpError(parseWahaError(error));

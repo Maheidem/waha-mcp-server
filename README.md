@@ -5,13 +5,13 @@
 [![Node.js](https://img.shields.io/badge/node-%3E%3D18-brightgreen)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-blue)](https://www.typescriptlang.org)
 
-A [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server that lets Claude interact with WhatsApp through the [WAHA](https://waha.devlike.pro/) (WhatsApp HTTP API) REST API. 13 tools for reading chats, sending/editing/deleting messages, downloading media, transcribing voice messages, managing groups and contacts, and reacting to messages.
+A [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server that lets Claude interact with WhatsApp through the [WAHA](https://waha.devlike.pro/) (WhatsApp HTTP API) REST API. 15 tools for reading chats, sending/editing/deleting/forwarding messages, downloading media, transcribing voice messages, managing groups and contacts, and reacting to messages.
 
 Built with TypeScript, the MCP SDK, and Axios. Stdio transport, zero browser dependencies.
 
 ## Features
 
-- **13 Tools** -- Check session, list chats, read messages (with mark-as-read), download media, transcribe audio, send/edit/delete text, react, verify numbers, list contacts, group info
+- **15 Tools** -- Check session, list chats (with previews), read messages (with mark-as-read), download media, transcribe audio, send/edit/delete/forward text, react, verify numbers, list contacts, list groups, group info
 - **Rate-Limited Sends** -- Built-in throttle between outbound messages to avoid WhatsApp detection
 - **Pagination** -- All list endpoints support limit/offset for large datasets
 - **Graceful Errors** -- WAHA API errors mapped to clear, actionable MCP error messages
@@ -112,12 +112,14 @@ Get the authenticated WhatsApp account's phone number, display name, and WhatsAp
 
 #### `whatsapp_list_chats`
 
-List recent WhatsApp chats with names and last message timestamps.
+List recent WhatsApp chats with last message preview and profile pictures.
 
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
 | `limit` | number (1-100) | No | 20 | Number of chats to return |
 | `offset` | number | No | 0 | Pagination offset |
+
+Returns chat ID, name, profile picture URL, and a preview of the last message (body, sender, timestamp, hasMedia).
 
 #### `whatsapp_read_messages`
 
@@ -175,6 +177,15 @@ Delete (unsend) a message from a chat. Removes it for everyone.
 | `chatId` | string | Yes | Chat ID containing the message |
 | `messageId` | string | Yes | Message ID to delete |
 
+#### `whatsapp_forward_message`
+
+Forward a message from one chat to another. Shows "Forwarded" label and preserves original sender.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `chatId` | string | Yes | Destination chat ID to forward TO |
+| `messageId` | string | Yes | Message ID to forward (from `whatsapp_read_messages`) |
+
 ### Media
 
 #### `whatsapp_download_media`
@@ -199,6 +210,15 @@ Requires `WAHA_TRANSCRIPTION_API_KEY` to be configured.
 | `replyWithTranscription` | boolean | No | false | If true, sends transcription as a WhatsApp reply to the audio |
 
 ### Groups
+
+#### `whatsapp_list_groups`
+
+List all WhatsApp groups you are a member of.
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `limit` | number (1-100) | No | 20 | Number of groups to return |
+| `offset` | number | No | 0 | Pagination offset |
 
 #### `whatsapp_get_group_info`
 
