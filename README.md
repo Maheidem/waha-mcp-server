@@ -5,13 +5,13 @@
 [![Node.js](https://img.shields.io/badge/node-%3E%3D18-brightgreen)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-blue)](https://www.typescriptlang.org)
 
-A [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server that lets Claude interact with WhatsApp through the [WAHA](https://waha.devlike.pro/) (WhatsApp HTTP API) REST API. 11 tools for reading chats, sending messages, downloading media, transcribing voice messages, managing groups and contacts, and reacting to messages.
+A [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server that lets Claude interact with WhatsApp through the [WAHA](https://waha.devlike.pro/) (WhatsApp HTTP API) REST API. 13 tools for reading chats, sending/editing/deleting messages, downloading media, transcribing voice messages, managing groups and contacts, and reacting to messages.
 
 Built with TypeScript, the MCP SDK, and Axios. Stdio transport, zero browser dependencies.
 
 ## Features
 
-- **11 Tools** -- Check session, list chats, read messages, download media, transcribe audio, send text, react, verify numbers, list contacts, group info
+- **13 Tools** -- Check session, list chats, read messages (with mark-as-read), download media, transcribe audio, send/edit/delete text, react, verify numbers, list contacts, group info
 - **Rate-Limited Sends** -- Built-in throttle between outbound messages to avoid WhatsApp detection
 - **Pagination** -- All list endpoints support limit/offset for large datasets
 - **Graceful Errors** -- WAHA API errors mapped to clear, actionable MCP error messages
@@ -132,6 +132,7 @@ Read messages from a specific chat. Supports pagination via offset to go back in
 | `timestampTo` | number | No | -- | Only messages before this Unix timestamp (seconds) |
 | `fromMe` | boolean | No | -- | Filter: `true` = only sent, `false` = only received |
 | `downloadMedia` | boolean | No | false | Include media download URLs |
+| `markAsRead` | boolean | No | false | Mark messages as read after fetching (for inbox triage) |
 
 ### Messaging
 
@@ -154,6 +155,25 @@ React to a message with an emoji. Send an empty string to remove a reaction.
 | `chatId` | string | Yes | Chat ID where the message is |
 | `messageId` | string | Yes | Message ID to react to |
 | `reaction` | string | Yes | Emoji to react with (empty string removes reaction) |
+
+#### `whatsapp_edit_message`
+
+Edit a previously sent text message. Only works on your own messages.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `chatId` | string | Yes | Chat ID containing the message |
+| `messageId` | string | Yes | Message ID to edit (must be your own) |
+| `text` | string | Yes | New text content |
+
+#### `whatsapp_delete_message`
+
+Delete (unsend) a message from a chat. Removes it for everyone.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `chatId` | string | Yes | Chat ID containing the message |
+| `messageId` | string | Yes | Message ID to delete |
 
 ### Media
 

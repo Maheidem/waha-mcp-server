@@ -124,4 +124,103 @@ Returns confirmation of the reaction.`,
       }
     }
   );
+
+  // ─── whatsapp_edit_message ──────────────────────────────────────
+  server.registerTool(
+    "whatsapp_edit_message",
+    {
+      title: "Edit WhatsApp Message",
+      description: `Edit a previously sent text message.
+
+Only works on messages you sent (fromMe=true). WhatsApp shows an "edited" label
+on the message after editing.
+
+Args:
+  - chatId: Chat ID containing the message
+  - messageId: Message ID to edit (must be your own message)
+  - text: New text content
+
+Returns confirmation with the edited message ID.`,
+      inputSchema: {
+        chatId: z.string().min(1).describe("Chat ID containing the message"),
+        messageId: z.string().min(1).describe("Message ID to edit (must be your own message)"),
+        text: z.string().min(1).max(65536).describe("New text content"),
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
+    },
+    async ({ chatId, messageId, text }) => {
+      try {
+        await client.put(
+          `/${client.session}/chats/${chatId}/messages/${messageId}`,
+          { text }
+        );
+
+        return {
+          content: [{
+            type: "text" as const,
+            text: JSON.stringify({
+              status: "edited",
+              chatId,
+              messageId,
+            }, null, 2),
+          }],
+        };
+      } catch (error) {
+        return mcpError(parseWahaError(error));
+      }
+    }
+  );
+
+  // ─── whatsapp_delete_message ────────────────────────────────────
+  server.registerTool(
+    "whatsapp_delete_message",
+    {
+      title: "Delete WhatsApp Message",
+      description: `Delete (unsend) a message from a chat.
+
+Removes the message for everyone in the chat. WhatsApp shows
+"This message was deleted" in its place.
+
+Args:
+  - chatId: Chat ID containing the message
+  - messageId: Message ID to delete
+
+Returns confirmation of deletion.`,
+      inputSchema: {
+        chatId: z.string().min(1).describe("Chat ID containing the message"),
+        messageId: z.string().min(1).describe("Message ID to delete"),
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: false,
+        openWorldHint: true,
+      },
+    },
+    async ({ chatId, messageId }) => {
+      try {
+        await client.delete(
+          `/${client.session}/chats/${chatId}/messages/${messageId}`
+        );
+
+        return {
+          content: [{
+            type: "text" as const,
+            text: JSON.stringify({
+              status: "deleted",
+              chatId,
+              messageId,
+            }, null, 2),
+          }],
+        };
+      } catch (error) {
+        return mcpError(parseWahaError(error));
+      }
+    }
+  );
 }

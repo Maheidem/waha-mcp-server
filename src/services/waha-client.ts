@@ -43,6 +43,11 @@ export class WahaClient {
     return response.data;
   }
 
+  async delete<T>(path: string): Promise<T> {
+    const response = await this.http.delete<T>(path);
+    return response.data;
+  }
+
   /**
    * Download binary data from a WAHA media URL.
    * The path should be relative (e.g., "/files/default/xxx.jpeg").

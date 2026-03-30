@@ -84,6 +84,7 @@ Args:
   - timestampTo: Only messages before this Unix timestamp (seconds).
   - fromMe: Filter to only sent (true) or only received (false) messages.
   - downloadMedia: Include media download URLs (default false, faster without)
+  - markAsRead: Mark messages as read after fetching (default false). Use when triaging inbox.
 
 Returns array of messages with:
   - id: Message ID (use for reactions/replies)
@@ -106,15 +107,17 @@ Returns array of messages with:
           .describe("Filter: true = only sent messages, false = only received messages."),
         downloadMedia: z.coerce.boolean().default(false)
           .describe("Include media download URLs (default false)"),
+        markAsRead: z.coerce.boolean().default(false)
+          .describe("Mark messages as read after fetching (default false). Use when triaging inbox."),
       },
       annotations: {
-        readOnlyHint: true,
+        readOnlyHint: false,
         destructiveHint: false,
-        idempotentHint: true,
+        idempotentHint: false,
         openWorldHint: true,
       },
     },
-    async ({ chatId, limit, offset, timestampFrom, timestampTo, fromMe, downloadMedia }) => {
+    async ({ chatId, limit, offset, timestampFrom, timestampTo, fromMe, downloadMedia, markAsRead }) => {
       try {
         const params: Record<string, string | number | boolean> = {
           limit,
@@ -129,6 +132,13 @@ Returns array of messages with:
           `/${client.session}/chats/${chatId}/messages`,
           params
         );
+
+        // Mark messages as read if requested
+        if (markAsRead && messages.length > 0) {
+          client.post(`/${client.session}/chats/${chatId}/messages/read`, {}).catch(() => {
+            // Non-critical — don't fail the read if mark-read fails
+          });
+        }
 
         const result = {
           chatId,
@@ -160,6 +170,7 @@ Returns array of messages with:
           count: messages.length,
           offset,
           hasMore: messages.length === limit,
+          ...(markAsRead ? { markedAsRead: true } : {}),
         };
 
         // Truncate if response is too large
