@@ -1,0 +1,53 @@
+{
+  "name": "@marcos-heidemann/waha-mcp-server",
+  "version": "1.0.0",
+  "description": "MCP server for WhatsApp messaging via WAHA REST API",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "waha-mcp-server": "dist/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/index.ts",
+    "start": "node dist/index.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:live": "vitest run --reporter=verbose",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "mcp",
+    "whatsapp",
+    "waha",
+    "messaging",
+    "model-context-protocol",
+    "claude",
+    "ai"
+  ],
+  "author": "Marcos Heidemann",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Maheidem/waha-mcp-server.git"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.28.0",
+    "axios": "^1.7.9",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.7.0",
+    "vitest": "^4.1.2"
+  }
+}
