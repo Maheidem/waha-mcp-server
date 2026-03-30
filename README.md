@@ -117,12 +117,16 @@ List recent WhatsApp chats with names and last message timestamps.
 
 #### `whatsapp_read_messages`
 
-Read messages from a specific chat. Returns message IDs needed for reactions and replies.
+Read messages from a specific chat. Supports pagination via offset to go back in time, and timestamp filters to read messages from a specific date range. Returns message IDs needed for reactions and replies.
 
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
 | `chatId` | string | Yes | -- | Chat ID (e.g., `5511999999999@c.us` or `id@g.us`) |
 | `limit` | number (1-100) | No | 20 | Number of messages to return |
+| `offset` | number | No | 0 | Skip N messages for pagination (go further back in history) |
+| `timestampFrom` | number | No | -- | Only messages after this Unix timestamp (seconds) |
+| `timestampTo` | number | No | -- | Only messages before this Unix timestamp (seconds) |
+| `fromMe` | boolean | No | -- | Filter: `true` = only sent, `false` = only received |
 | `downloadMedia` | boolean | No | false | Include media download URLs |
 
 ### Messaging
