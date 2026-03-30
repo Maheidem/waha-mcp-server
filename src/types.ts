@@ -44,6 +44,12 @@ export interface WahaMessage {
   vCards?: string[];
   /** Location data */
   location?: unknown;
+  /** Media info (when downloadMedia=true) */
+  media?: {
+    url: string;
+    mimetype: string;
+    filename?: string;
+  } | null;
 }
 
 /** Response from POST /api/sendText */

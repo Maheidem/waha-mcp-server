@@ -8,11 +8,13 @@ import type { WahaConfig } from "../types.js";
 export class WahaClient {
   private readonly http: AxiosInstance;
   readonly session: string;
+  readonly baseUrl: string;
   private lastSendTime = 0;
   private readonly sendDelayMs: number;
 
   constructor(config: WahaConfig) {
     this.session = config.session;
+    this.baseUrl = config.apiUrl;
     this.sendDelayMs = config.sendDelayMs;
 
     this.http = axios.create({

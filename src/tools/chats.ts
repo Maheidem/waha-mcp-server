@@ -132,15 +132,31 @@ Returns array of messages with:
 
         const result = {
           chatId,
-          messages: messages.map((m) => ({
-            id: m.id,
-            from: m.from,
-            fromMe: m.fromMe,
-            body: extractMessageBody(m),
-            timestamp: formatTimestamp(m.timestamp),
-            hasMedia: m.hasMedia,
-            ack: m.ackName,
-          })),
+          messages: messages.map((m) => {
+            const msg: Record<string, unknown> = {
+              id: m.id,
+              from: m.from,
+              fromMe: m.fromMe,
+              body: extractMessageBody(m),
+              timestamp: formatTimestamp(m.timestamp),
+              hasMedia: m.hasMedia,
+              ack: m.ackName,
+            };
+            // Include media URL when downloadMedia=true and media exists
+            if (m.media?.url) {
+              // Rewrite internal localhost URL to the configured WAHA API URL
+              const mediaUrl = m.media.url.replace(
+                /^https?:\/\/localhost:\d+\/api/,
+                client.baseUrl
+              );
+              msg.media = {
+                url: mediaUrl,
+                mimetype: m.media.mimetype,
+                ...(m.media.filename ? { filename: m.media.filename } : {}),
+              };
+            }
+            return msg;
+          }),
           count: messages.length,
           offset,
           hasMore: messages.length === limit,
