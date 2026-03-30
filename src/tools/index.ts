@@ -6,6 +6,7 @@ import { registerChatTools } from "./chats.js";
 import { registerMessagingTools } from "./messaging.js";
 import { registerContactTools } from "./contacts.js";
 import { registerMediaTools } from "./media.js";
+import { registerGroupTools } from "./groups.js";
 
 /**
  * Register all WhatsApp MCP tools on the server.
@@ -16,4 +17,5 @@ export function registerAllTools(server: McpServer, client: WahaClient, config: 
   registerMessagingTools(server, client);
   registerContactTools(server, client);
   registerMediaTools(server, client, config);
+  registerGroupTools(server, client);
 }

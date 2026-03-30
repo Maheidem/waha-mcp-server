@@ -5,13 +5,13 @@
 [![Node.js](https://img.shields.io/badge/node-%3E%3D18-brightgreen)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-blue)](https://www.typescriptlang.org)
 
-A [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server that lets Claude interact with WhatsApp through the [WAHA](https://waha.devlike.pro/) (WhatsApp HTTP API) REST API. 10 tools for reading chats, sending messages, downloading media, transcribing voice messages, managing contacts, and reacting to messages.
+A [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server that lets Claude interact with WhatsApp through the [WAHA](https://waha.devlike.pro/) (WhatsApp HTTP API) REST API. 11 tools for reading chats, sending messages, downloading media, transcribing voice messages, managing groups and contacts, and reacting to messages.
 
 Built with TypeScript, the MCP SDK, and Axios. Stdio transport, zero browser dependencies.
 
 ## Features
 
-- **10 Tools** -- Check session, list chats, read messages, download media, transcribe audio, send text, react, verify numbers, list contacts
+- **11 Tools** -- Check session, list chats, read messages, download media, transcribe audio, send text, react, verify numbers, list contacts, group info
 - **Rate-Limited Sends** -- Built-in throttle between outbound messages to avoid WhatsApp detection
 - **Pagination** -- All list endpoints support limit/offset for large datasets
 - **Graceful Errors** -- WAHA API errors mapped to clear, actionable MCP error messages
@@ -177,6 +177,16 @@ Requires `WAHA_TRANSCRIPTION_API_KEY` to be configured.
 | `chatId` | string | Yes | -- | Chat ID containing the audio message |
 | `messageId` | string | Yes | -- | Message ID of the audio to transcribe |
 | `replyWithTranscription` | boolean | No | false | If true, sends transcription as a WhatsApp reply to the audio |
+
+### Groups
+
+#### `whatsapp_get_group_info`
+
+Get information about a WhatsApp group including all participants with phone numbers and admin status.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `groupId` | string | Yes | Group chat ID (ending in `@g.us`, from `whatsapp_list_chats`) |
 
 ### Contacts
 
