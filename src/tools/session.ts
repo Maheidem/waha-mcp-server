@@ -1,9 +1,8 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import type { WahaClient } from "../services/waha-client.js";
-import type { WahaSession, WahaMe } from "../types.js";
-import { parseWahaError, mcpError } from "../utils/errors.js";
+import type { ApiClient } from "../services/api-client.js";
+import { parseApiError, mcpError } from "../utils/errors.js";
 
-export function registerSessionTools(server: McpServer, client: WahaClient): void {
+export function registerSessionTools(server: McpServer, api: ApiClient): void {
   server.registerTool(
     "whatsapp_session_status",
     {
@@ -30,23 +29,19 @@ Returns:
     },
     async () => {
       try {
-        const sessions = await client.get<WahaSession[]>("/sessions");
-        const session = sessions.find((s) => s.name === client.session);
+        const session = await api.getSessionStatus() as Record<string, unknown>;
 
-        if (!session) {
-          return mcpError(
-            `Session "${client.session}" not found. Available sessions: ${sessions.map((s) => s.name).join(", ") || "none"}`
-          );
-        }
+        const me = session.me as Record<string, unknown> | null;
+        const timestamps = session.timestamps as Record<string, number> | null;
 
         const result = {
-          name: session.name,
+          name: session.name ?? api.session,
           status: session.status,
-          phone: session.me?.id || null,
-          pushName: session.me?.pushName || null,
-          presence: session.presence,
-          lastActivity: session.timestamps?.activity
-            ? new Date(session.timestamps.activity).toISOString()
+          phone: me?.id || null,
+          pushName: me?.pushName || null,
+          presence: session.presence ?? null,
+          lastActivity: timestamps?.activity
+            ? new Date(timestamps.activity).toISOString()
             : null,
         };
 
@@ -54,7 +49,7 @@ Returns:
           content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
         };
       } catch (error) {
-        return mcpError(parseWahaError(error));
+        return mcpError(parseApiError(error));
       }
     }
   );
@@ -79,7 +74,7 @@ No parameters required.`,
     },
     async () => {
       try {
-        const me = await client.get<WahaMe>(`/sessions/${client.session}/me`);
+        const me = await api.getAccount() as Record<string, unknown>;
 
         const result = {
           id: me.id,
@@ -91,7 +86,7 @@ No parameters required.`,
           content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
         };
       } catch (error) {
-        return mcpError(parseWahaError(error));
+        return mcpError(parseApiError(error));
       }
     }
   );

@@ -1,8 +1,8 @@
 /** Default WAHA session name (CORE tier only supports 1) */
 export const DEFAULT_SESSION = "default";
 
-/** Default API base URL */
-export const DEFAULT_API_URL = "http://localhost:3000/api";
+/** Default API base URL (Message Store facade) */
+export const DEFAULT_API_URL = "http://localhost:8200/api";
 
 /** Minimum delay between outbound messages (ms) */
 export const DEFAULT_SEND_DELAY_MS = 1000;

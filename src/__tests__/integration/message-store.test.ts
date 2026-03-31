@@ -11,20 +11,16 @@ import {
 /**
  * Message Store integration tests (Level 1 — read-only).
  *
- * These test the 4 new tools backed by the Message Store API (:8200):
+ * These test the 4 tools backed by the Message Store API (:8200):
  *   - whatsapp_search_messages
  *   - whatsapp_contact_graph
  *   - whatsapp_chat_summary
  *   - whatsapp_stats
  *
- * Requires: WAHA_STORE_URL and WAHA_STORE_API_KEY env vars.
- * Skips gracefully when the Message Store is not configured.
+ * Requires: WAHA_API_URL and WAHA_API_KEY env vars pointing to :8200.
  */
 
-const storeConfigured = !!(process.env.WAHA_STORE_URL && process.env.WAHA_STORE_API_KEY);
-const describeStore = storeConfigured ? describe : describe.skip;
-
-describeStore("Message Store Tools", () => {
+describe("Message Store Tools", () => {
   let env: LiveServer;
   let client: Client;
 

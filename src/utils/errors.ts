@@ -1,40 +1,45 @@
 import axios from "axios";
-import type { WahaErrorResponse } from "../types.js";
 
 /**
- * Parse WAHA API errors into user-friendly messages.
+ * Parse API errors into user-friendly messages.
+ * Sanitized: no internal IPs, no auth headers in logs.
  */
-export function parseWahaError(error: unknown): string {
+export function parseApiError(error: unknown): string {
   console.error("[waha-mcp] Error:", sanitizeForLog(error));
 
   if (axios.isAxiosError(error)) {
     const status = error.response?.status;
-    const data = error.response?.data as WahaErrorResponse | undefined;
-    const wahaMsg = data?.message || data?.exception?.message || "";
+    const data = error.response?.data as Record<string, unknown> | undefined;
+    const detail = data?.detail ?? data?.message ?? data?.exception ?? "";
+    const msg = typeof detail === "string"
+      ? detail
+      : typeof detail === "object" && detail !== null && "message" in (detail as Record<string, unknown>)
+        ? String((detail as Record<string, unknown>).message)
+        : JSON.stringify(detail);
 
     if (!error.response) {
-      return "Cannot reach WAHA server. Is the container running?";
+      return "Cannot reach API server. Is the Message Store running?";
     }
 
     switch (status) {
       case 401:
-        return "WAHA API key rejected. Check WAHA_API_KEY environment variable.";
+        return "API key rejected. Check WAHA_API_KEY environment variable.";
       case 404:
-        return `Resource not found: ${wahaMsg || "Check the session name or chat ID."}`;
+        return `Not found: ${stripInternalIps(msg) || "Check the ID or JID."}`;
       case 422:
-        return `Invalid request: ${wahaMsg}`;
+        return `Invalid request: ${stripInternalIps(msg)}`;
       case 500:
-        return `WAHA server error: ${wahaMsg || "Internal error"}`;
+        return `API server error: ${stripInternalIps(msg) || "Internal error"}`;
       default:
-        return `WAHA API error (${status}): ${wahaMsg || error.message}`;
+        return stripInternalIps(`API error (${status}): ${msg || error.message}`);
     }
   }
 
   if (error instanceof Error) {
-    return `Error: ${error.message}`;
+    return stripInternalIps(`Error: ${error.message}`);
   }
 
-  return `Unknown error: ${String(error)}`;
+  return stripInternalIps(`Unknown error: ${String(error)}`);
 }
 
 /**
@@ -54,44 +59,6 @@ function sanitizeForLog(error: unknown): string {
 /** Remove internal IP addresses from user-facing error messages */
 function stripInternalIps(message: string): string {
   return message.replace(/\b(?:10|172\.(?:1[6-9]|2\d|3[01])|192\.168)\.\d{1,3}\.\d{1,3}(:\d+)?\b/g, "<internal>");
-}
-
-/**
- * Parse Message Store API errors into user-friendly messages.
- * Sanitized: no internal IPs, no auth headers in logs.
- */
-export function parseStoreError(error: unknown): string {
-  console.error("[message-store] Error:", sanitizeForLog(error));
-
-  if (axios.isAxiosError(error)) {
-    const status = error.response?.status;
-    const data = error.response?.data as Record<string, unknown> | undefined;
-    const detail = data?.detail ?? data?.message ?? "";
-    const msg = typeof detail === "string" ? detail : JSON.stringify(detail);
-
-    if (!error.response) {
-      return "Cannot reach Message Store API. Is it running?";
-    }
-
-    switch (status) {
-      case 401:
-        return "Message Store API key rejected. Check WAHA_STORE_API_KEY.";
-      case 404:
-        return `Not found: ${stripInternalIps(msg) || "Check the ID or JID."}`;
-      case 422:
-        return `Invalid request: ${stripInternalIps(msg)}`;
-      case 500:
-        return `Message Store error: ${stripInternalIps(msg) || "Internal error"}`;
-      default:
-        return stripInternalIps(`Message Store API error (${status}): ${msg || error.message}`);
-    }
-  }
-
-  if (error instanceof Error) {
-    return stripInternalIps(`Error: ${error.message}`);
-  }
-
-  return stripInternalIps(`Unknown error: ${String(error)}`);
 }
 
 /**

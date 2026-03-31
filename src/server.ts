@@ -1,6 +1,5 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { WahaClient } from "./services/waha-client.js";
-import { MessageStoreClient } from "./services/message-store-client.js";
+import { ApiClient } from "./services/api-client.js";
 import { registerAllTools } from "./tools/index.js";
 import type { WahaConfig } from "./types.js";
 
@@ -13,9 +12,8 @@ export function createServer(config: WahaConfig): McpServer {
     version: "1.0.0",
   });
 
-  const client = new WahaClient(config);
-  const storeClient = config.store ? new MessageStoreClient(config.store) : null;
-  registerAllTools(server, client, config, storeClient);
+  const api = new ApiClient(config);
+  registerAllTools(server, api, config);
 
   return server;
 }

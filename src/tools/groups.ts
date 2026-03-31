@@ -1,10 +1,10 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import type { WahaClient } from "../services/waha-client.js";
+import type { ApiClient } from "../services/api-client.js";
 import { DEFAULT_LIMIT, MAX_LIMIT, CHARACTER_LIMIT } from "../constants.js";
-import { parseWahaError, mcpError } from "../utils/errors.js";
+import { parseApiError, mcpError } from "../utils/errors.js";
 
-interface WahaGroupInfo {
+interface GroupInfo {
   JID: string;
   Name: string;
   Topic: string;
@@ -13,10 +13,10 @@ interface WahaGroupInfo {
   IsAnnounce: boolean;
   IsEphemeral: boolean;
   IsLocked: boolean;
-  participants?: WahaGroupParticipant[];
+  participants?: GroupParticipant[];
 }
 
-interface WahaGroupParticipant {
+interface GroupParticipant {
   JID: string;
   PhoneNumber: string;
   LID: string;
@@ -29,7 +29,7 @@ function formatPhone(pn: string): string {
   return pn.replace("@s.whatsapp.net", "");
 }
 
-export function registerGroupTools(server: McpServer, client: WahaClient): void {
+export function registerGroupTools(server: McpServer, api: ApiClient): void {
   server.registerTool(
     "whatsapp_list_groups",
     {
@@ -63,24 +63,18 @@ Returns array of groups with:
     },
     async ({ limit, offset }) => {
       try {
-        const groups = await client.get<WahaGroupInfo[]>(
-          `/${client.session}/groups`
-        );
-
-        // Client-side pagination (API returns all groups at once)
-        const paginated = groups.slice(offset, offset + limit);
+        const groups = await api.listGroups({ limit, offset }) as GroupInfo[];
 
         const result = {
-          groups: paginated.map((g) => ({
+          groups: groups.map((g) => ({
             id: g.JID,
             name: g.Name,
             owner: formatPhone(g.OwnerPN),
             createdAt: g.GroupCreated,
           })),
-          count: paginated.length,
-          total: groups.length,
+          count: groups.length,
           offset,
-          hasMore: offset + limit < groups.length,
+          hasMore: groups.length === limit,
         };
 
         let text = JSON.stringify(result, null, 2);
@@ -98,7 +92,7 @@ Returns array of groups with:
           content: [{ type: "text" as const, text }],
         };
       } catch (error) {
-        return mcpError(parseWahaError(error));
+        return mcpError(parseApiError(error));
       }
     }
   );
@@ -137,10 +131,14 @@ Returns:
     },
     async ({ groupId }) => {
       try {
-        const [groupInfo, participants] = await Promise.all([
-          client.get<WahaGroupInfo>(`/${client.session}/groups/${groupId}`),
-          client.get<WahaGroupParticipant[]>(`/${client.session}/groups/${groupId}/participants`),
-        ]);
+        const groupData = await api.getGroupInfo(groupId) as {
+          group: GroupInfo;
+          participants: GroupParticipant[];
+        };
+
+        // The API may return the data in different shapes — handle both
+        const groupInfo = groupData.group || groupData as unknown as GroupInfo;
+        const participants = groupData.participants || groupInfo.participants || [];
 
         const result = {
           groupId,
@@ -166,7 +164,7 @@ Returns:
           content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
         };
       } catch (error) {
-        return mcpError(parseWahaError(error));
+        return mcpError(parseApiError(error));
       }
     }
   );

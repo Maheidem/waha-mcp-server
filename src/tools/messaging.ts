@@ -1,10 +1,9 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import type { WahaClient } from "../services/waha-client.js";
-import type { WahaSendResult } from "../types.js";
-import { parseWahaError, mcpError } from "../utils/errors.js";
+import type { ApiClient } from "../services/api-client.js";
+import { parseApiError, mcpError } from "../utils/errors.js";
 
-export function registerMessagingTools(server: McpServer, client: WahaClient): void {
+export function registerMessagingTools(server: McpServer, api: ApiClient): void {
   server.registerTool(
     "whatsapp_send_text",
     {
@@ -40,18 +39,14 @@ Returns:
     },
     async ({ chatId, text, replyTo }) => {
       try {
-        await client.throttleSend();
+        await api.throttleSend();
 
-        const body: Record<string, unknown> = {
-          chatId,
+        const result = await api.sendText({
+          chat_id: chatId,
           text,
-          session: client.session,
-        };
-        if (replyTo) {
-          body.reply_to = replyTo;
-        }
-
-        const result = await client.post<WahaSendResult>("/sendText", body);
+          session: api.session,
+          ...(replyTo ? { reply_to: replyTo } : {}),
+        });
 
         const output = {
           status: "sent",
@@ -66,7 +61,7 @@ Returns:
           content: [{ type: "text" as const, text: JSON.stringify(output, null, 2) }],
         };
       } catch (error) {
-        return mcpError(parseWahaError(error));
+        return mcpError(parseApiError(error));
       }
     }
   );
@@ -102,11 +97,10 @@ Returns confirmation of the reaction.`,
     },
     async ({ chatId, messageId, reaction }) => {
       try {
-        await client.put("/reaction", {
-          chatId,
-          messageId,
+        await api.react({
+          message_id: messageId,
           reaction,
-          session: client.session,
+          session: api.session,
         });
 
         const output = {
@@ -120,7 +114,7 @@ Returns confirmation of the reaction.`,
           content: [{ type: "text" as const, text: JSON.stringify(output, null, 2) }],
         };
       } catch (error) {
-        return mcpError(parseWahaError(error));
+        return mcpError(parseApiError(error));
       }
     }
   );
@@ -155,10 +149,11 @@ Returns confirmation with the edited message ID.`,
     },
     async ({ chatId, messageId, text }) => {
       try {
-        await client.put(
-          `/${client.session}/chats/${chatId}/messages/${messageId}`,
-          { text }
-        );
+        await api.editMessage({
+          message_id: messageId,
+          text,
+          session: api.session,
+        });
 
         return {
           content: [{
@@ -171,7 +166,7 @@ Returns confirmation with the edited message ID.`,
           }],
         };
       } catch (error) {
-        return mcpError(parseWahaError(error));
+        return mcpError(parseApiError(error));
       }
     }
   );
@@ -204,9 +199,7 @@ Returns confirmation of deletion.`,
     },
     async ({ chatId, messageId }) => {
       try {
-        await client.delete(
-          `/${client.session}/chats/${chatId}/messages/${messageId}`
-        );
+        await api.deleteMessage(messageId, api.session);
 
         return {
           content: [{
@@ -219,7 +212,7 @@ Returns confirmation of deletion.`,
           }],
         };
       } catch (error) {
-        return mcpError(parseWahaError(error));
+        return mcpError(parseApiError(error));
       }
     }
   );
@@ -254,12 +247,12 @@ Returns confirmation with forwarded message ID.`,
     },
     async ({ chatId, messageId }) => {
       try {
-        await client.throttleSend();
+        await api.throttleSend();
 
-        const result = await client.post<WahaSendResult>("/forwardMessage", {
-          chatId,
-          messageId,
-          session: client.session,
+        const result = await api.forwardMessage({
+          message_id: messageId,
+          chat_id: chatId,
+          session: api.session,
         });
 
         const output = {
@@ -276,7 +269,7 @@ Returns confirmation with forwarded message ID.`,
           content: [{ type: "text" as const, text: JSON.stringify(output, null, 2) }],
         };
       } catch (error) {
-        return mcpError(parseWahaError(error));
+        return mcpError(parseApiError(error));
       }
     }
   );

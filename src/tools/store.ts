@@ -1,8 +1,8 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import type { MessageStoreClient } from "../services/message-store-client.js";
+import type { ApiClient } from "../services/api-client.js";
 import { CHARACTER_LIMIT, DEFAULT_LIMIT, MAX_LIMIT } from "../constants.js";
-import { parseStoreError, mcpError } from "../utils/errors.js";
+import { parseApiError, mcpError } from "../utils/errors.js";
 
 /** Max length for free-text search inputs */
 const MAX_SEARCH_LENGTH = 500;
@@ -18,9 +18,9 @@ const jidSchema = z.string().min(1).max(200)
 
 /**
  * Register Message Store tools (search, graph, summary, stats).
- * Only called when the Message Store is configured.
+ * Always registered — the Message Store API is the single backend.
  */
-export function registerStoreTools(server: McpServer, store: MessageStoreClient): void {
+export function registerStoreTools(server: McpServer, api: ApiClient): void {
 
   // ── whatsapp_search_messages ──────────────────────────────────
 
@@ -77,7 +77,7 @@ Note: sender_name may be null for some messages.`,
     },
     async ({ search, chatId, sender, since, until, type, fromMe, limit, offset }) => {
       try {
-        const result = await store.searchMessages({
+        const result = await api.searchMessages({
           search,
           chat_jid: chatId,
           sender,
@@ -122,7 +122,7 @@ Note: sender_name may be null for some messages.`,
           content: [{ type: "text" as const, text }],
         };
       } catch (error) {
-        return mcpError(parseStoreError(error));
+        return mcpError(parseApiError(error));
       }
     }
   );
@@ -157,7 +157,7 @@ Returns:
     },
     async ({ contactId }) => {
       try {
-        const graph = await store.getContactGraph(contactId);
+        const graph = await api.getContactGraph(contactId);
 
         const response = {
           contact: {
@@ -197,7 +197,7 @@ Returns:
           content: [{ type: "text" as const, text }],
         };
       } catch (error) {
-        return mcpError(parseStoreError(error));
+        return mcpError(parseApiError(error));
       }
     }
   );
@@ -235,7 +235,7 @@ Returns:
     },
     async ({ chatId, limit }) => {
       try {
-        const summary = await store.getChatSummary(chatId, limit);
+        const summary = await api.getChatSummary(chatId, limit);
 
         const response = {
           chat: {
@@ -273,7 +273,7 @@ Returns:
           content: [{ type: "text" as const, text }],
         };
       } catch (error) {
-        return mcpError(parseStoreError(error));
+        return mcpError(parseApiError(error));
       }
     }
   );
@@ -302,7 +302,7 @@ No arguments needed. Returns:
     },
     async () => {
       try {
-        const stats = await store.getStats();
+        const stats = await api.getStats();
 
         const response = {
           totals: {
@@ -334,7 +334,7 @@ No arguments needed. Returns:
           content: [{ type: "text" as const, text: JSON.stringify(response, null, 2) }],
         };
       } catch (error) {
-        return mcpError(parseStoreError(error));
+        return mcpError(parseApiError(error));
       }
     }
   );
