@@ -345,11 +345,10 @@ describe("Level 1 — Read-only Tools", () => {
       const parsed = parseToolResult(result) as {
         contacts: Array<{
           id: string;
-          storeId: number;
           name: string;
           pushName: string | null;
           googleName: string | null;
-          phone: string | null;
+          phone: string;
           email: string | null;
           organization: string | null;
           messageCount: number;
@@ -364,7 +363,8 @@ describe("Level 1 — Read-only Tools", () => {
       expect(parsed.source).toBe("message-store");
       for (const contact of parsed.contacts) {
         expect(typeof contact.id).toBe("string");
-        expect(typeof contact.storeId).toBe("number");
+        // id is now the phone number
+        expect(contact.id).toBe(contact.phone);
         expect(typeof contact.name).toBe("string");
         expect(typeof contact.messageCount).toBe("number");
         expect(typeof contact.chatsCount).toBe("number");

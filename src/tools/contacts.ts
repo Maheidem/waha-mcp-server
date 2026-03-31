@@ -84,9 +84,8 @@ Returns array of contacts with:
 
         const result = {
           contacts: contacts.map((c) => ({
-            id: c.jid,
-            storeId: c.id,
-            name: c.google_name || c.push_name || c.jid,
+            id: c.phone,
+            name: c.google_name || c.push_name || c.phone,
             pushName: c.push_name,
             googleName: c.google_name,
             phone: c.phone,

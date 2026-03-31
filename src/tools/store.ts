@@ -133,20 +133,17 @@ Note: sender_name may be null for some messages.`,
     "whatsapp_contact_graph",
     {
       title: "Contact Social Graph",
-      description: `Get social graph for a WhatsApp contact — shared groups, mutual connections,
-and interaction statistics.
+      description: `Get social graph for a WhatsApp contact — shared groups, mutual connections.
 
 Args:
-  - contactId: Numeric contact ID from the Message Store (use whatsapp_search_messages
-    or whatsapp_list_contacts to find contact IDs)
+  - phone: Phone number with country code (e.g., "5524999160115")
 
 Returns:
-  - contact: Name, JID, first/last seen
-  - chats: Groups this contact is in, with message counts
-  - connections: Other contacts who share groups with this person`,
+  - groups: Groups this contact is in, with message counts
+  - mutualContacts: Other contacts who share groups with this person`,
       inputSchema: {
-        contactId: z.coerce.number().int().min(1)
-          .describe("Numeric contact ID from the Message Store"),
+        phone: z.string().min(8)
+          .describe('Phone number with country code (e.g., "5524999160115")'),
       },
       annotations: {
         readOnlyHint: true,
@@ -155,29 +152,22 @@ Returns:
         openWorldHint: true,
       },
     },
-    async ({ contactId }) => {
+    async ({ phone }) => {
       try {
-        const graph = await api.getContactGraph(contactId);
+        const graph = await api.getContactGraph(phone);
 
         const response = {
-          contact: {
-            id: graph.contact.id,
-            name: graph.contact.push_name,
-            jid: graph.contact.jid,
-            phone: graph.contact.phone,
-            firstSeen: graph.contact.first_seen_at,
-            lastSeen: graph.contact.last_seen_at,
-          },
+          phone: graph.contact.phone,
+          name: graph.contact.person_name || graph.contact.push_name,
           sharedGroups: graph.chats.map((c) => ({
             jid: c.jid,
             name: c.name,
             type: c.chat_type,
             messageCount: c.message_count,
           })),
-          connections: graph.connections.map((c) => ({
-            id: c.id,
-            name: c.push_name,
-            jid: c.jid,
+          mutualContacts: graph.connections.map((c) => ({
+            phone: c.phone,
+            name: c.name || c.push_name,
             sharedGroups: c.shared_groups,
           })),
         };
@@ -186,9 +176,9 @@ Returns:
         if (text.length > CHARACTER_LIMIT) {
           const truncated = {
             ...response,
-            connections: response.connections.slice(0, 20),
+            mutualContacts: response.mutualContacts.slice(0, 20),
             truncated: true,
-            truncationNote: "Connections list truncated to top 20.",
+            truncationNote: "Mutual contacts list truncated to top 20.",
           };
           text = JSON.stringify(truncated, null, 2);
         }
@@ -324,8 +314,8 @@ No arguments needed. Returns:
             lastMessage: c.last_message_at,
           })),
           topContacts: stats.top_contacts.map((c) => ({
-            name: c.push_name,
-            jid: c.jid,
+            phone: c.phone,
+            name: c.name,
             messageCount: c.message_count,
           })),
         };

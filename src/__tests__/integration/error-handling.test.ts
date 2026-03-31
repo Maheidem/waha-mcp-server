@@ -69,10 +69,10 @@ describe("Error Handling", () => {
     }
   });
 
-  it("contact_graph with invalid contactId returns error", async () => {
+  it("contact_graph with invalid phone returns error", async () => {
     const result = await client.callTool({
       name: "whatsapp_contact_graph",
-      arguments: { contactId: 999999 },
+      arguments: { phone: "0000000000" },
     });
     expect(result.isError).toBeTruthy();
   });
