@@ -338,4 +338,79 @@ No arguments needed. Returns:
       }
     }
   );
+
+  // ─── whatsapp_import_chat ───────────────────────────────────────
+  server.registerTool(
+    "whatsapp_import_chat",
+    {
+      title: "Import WhatsApp Chat Export",
+      description: `Import a WhatsApp chat export file (ZIP or TXT) into the message store.
+
+Use this to backfill historical messages from WhatsApp's "Export Chat" feature.
+Only inserts new messages — won't overwrite or duplicate existing data.
+
+The file should be a WhatsApp chat export:
+  - ZIP file containing a .txt (standard WhatsApp export format)
+  - Or a plain .txt file
+
+The chat name is extracted from the filename (e.g., "Conversa do WhatsApp com NAME.zip").
+You can override it with the chatName parameter.
+
+Messages are matched to existing contacts by name. If a contact doesn't exist, it's created.
+If the chat already exists in the store (by name), messages are added to it.
+
+Args:
+  - filePath: Absolute path to the ZIP or TXT file on the server
+  - chatName: Optional override for the chat name (extracted from filename if omitted)
+
+Returns:
+  - chat_name: Resolved chat name
+  - total_parsed: Number of messages found in file
+  - inserted: New messages added
+  - skipped_duplicates: Messages already in store
+  - senders: List of sender names found`,
+      inputSchema: {
+        filePath: z.string().min(1)
+          .describe("Absolute path to the WhatsApp export ZIP or TXT file on the server"),
+        chatName: z.string().optional()
+          .describe("Override chat name (extracted from filename if omitted)"),
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
+    async ({ filePath, chatName }) => {
+      try {
+        // Read the file from the server filesystem
+        const fs = await import("fs/promises");
+        const path = await import("path");
+
+        const fileData = await fs.readFile(filePath);
+        const filename = path.basename(filePath);
+
+        const result = await api.importMessages(fileData, filename, chatName);
+
+        return {
+          content: [{
+            type: "text" as const,
+            text: JSON.stringify({
+              status: "imported",
+              chatName: result.chat_name,
+              chatJid: result.chat_jid,
+              totalParsed: result.total_parsed,
+              inserted: result.inserted,
+              skippedDuplicates: result.skipped_duplicates,
+              contactsCreated: result.contacts_created,
+              senders: result.senders,
+            }, null, 2),
+          }],
+        };
+      } catch (error) {
+        return mcpError(parseApiError(error));
+      }
+    }
+  );
 }

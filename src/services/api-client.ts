@@ -272,6 +272,27 @@ export class ApiClient {
     return response.data;
   }
 
+  async importMessages(file: Buffer, filename: string, chatName?: string): Promise<{
+    status: string;
+    chat_name: string;
+    chat_jid: string;
+    total_parsed: number;
+    inserted: number;
+    skipped_duplicates: number;
+    contacts_created: number;
+    senders: string[];
+  }> {
+    const formData = new FormData();
+    const blob = new Blob([file as unknown as BlobPart], { type: "application/zip" });
+    formData.append("file", blob, filename);
+    const params = chatName ? { chat_name: chatName } : undefined;
+    const response = await this.http.post("/messages/import", formData, {
+      headers: { "Content-Type": "multipart/form-data" },
+      params,
+    });
+    return response.data;
+  }
+
   // ── Health ─────────────────────────────────────────────────────
 
   async getHealth(): Promise<{ status: string }> {
