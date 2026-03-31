@@ -5,6 +5,7 @@ import {
   parseToolResult,
   getToolText,
   SELF_CHAT_ID,
+  SELF_PHONE,
   type LiveServer,
 } from "../helpers/live-server.js";
 
@@ -151,53 +152,32 @@ describe("Message Store Tools", () => {
   // ─── whatsapp_contact_graph ────────────────────────────────────
 
   describe("whatsapp_contact_graph", () => {
-    it("returns graph for contact ID 1", async () => {
+    it("returns graph for own phone number", async () => {
       const result = await client.callTool({
         name: "whatsapp_contact_graph",
-        arguments: { contactId: 1 },
+        arguments: { phone: SELF_PHONE },
       });
       expect(result.isError).toBeFalsy();
       const parsed = parseToolResult(result) as {
-        contact: { id: number; name: string; jid: string };
+        phone: string;
+        name: string | null;
         sharedGroups: unknown[];
-        connections: unknown[];
+        mutualContacts: unknown[];
       };
-      expect(parsed.contact).toBeDefined();
-      expect(typeof parsed.contact.id).toBe("number");
-      expect(typeof parsed.contact.jid).toBe("string");
+      expect(parsed.phone).toBe(SELF_PHONE);
       expect(Array.isArray(parsed.sharedGroups)).toBe(true);
-      expect(Array.isArray(parsed.connections)).toBe(true);
-    });
-
-    it("contact has expected detail fields", async () => {
-      const result = await client.callTool({
-        name: "whatsapp_contact_graph",
-        arguments: { contactId: 1 },
-      });
-      const parsed = parseToolResult(result) as {
-        contact: {
-          id: number;
-          name: string;
-          jid: string;
-          phone: string | null;
-          firstSeen: string;
-          lastSeen: string;
-        };
-      };
-      expect(parsed.contact.id).toBe(1);
-      expect(typeof parsed.contact.firstSeen).toBe("string");
-      expect(typeof parsed.contact.lastSeen).toBe("string");
+      expect(Array.isArray(parsed.mutualContacts)).toBe(true);
     });
 
     it("shared groups have required fields", async () => {
       const result = await client.callTool({
         name: "whatsapp_contact_graph",
-        arguments: { contactId: 1 },
+        arguments: { phone: SELF_PHONE },
       });
       const parsed = parseToolResult(result) as {
         sharedGroups: Array<{
           jid: string;
-          name: string;
+          name: string | null;
           type: string;
           messageCount: number;
         }>;
@@ -209,30 +189,28 @@ describe("Message Store Tools", () => {
       }
     });
 
-    it("connections have required fields", async () => {
+    it("mutual contacts have required fields", async () => {
       const result = await client.callTool({
         name: "whatsapp_contact_graph",
-        arguments: { contactId: 1 },
+        arguments: { phone: SELF_PHONE },
       });
       const parsed = parseToolResult(result) as {
-        connections: Array<{
-          id: number;
-          name: string;
-          jid: string;
+        mutualContacts: Array<{
+          phone: string;
+          name: string | null;
           sharedGroups: number;
         }>;
       };
-      for (const conn of parsed.connections) {
-        expect(typeof conn.id).toBe("number");
-        expect(typeof conn.jid).toBe("string");
-        expect(typeof conn.sharedGroups).toBe("number");
+      for (const contact of parsed.mutualContacts) {
+        expect(typeof contact.phone).toBe("string");
+        expect(typeof contact.sharedGroups).toBe("number");
       }
     });
 
-    it("invalid contact ID returns error", async () => {
+    it("invalid phone returns error", async () => {
       const result = await client.callTool({
         name: "whatsapp_contact_graph",
-        arguments: { contactId: 999999 },
+        arguments: { phone: "0000000000" },
       });
       expect(result.isError).toBeTruthy();
     });
@@ -414,14 +392,14 @@ describe("Message Store Tools", () => {
       });
       const parsed = parseToolResult(result) as {
         topContacts: Array<{
-          name: string;
-          jid: string;
+          phone: string;
+          name: string | null;
           messageCount: number;
         }>;
       };
       expect(parsed.topContacts.length).toBeGreaterThan(0);
       for (const contact of parsed.topContacts) {
-        expect(typeof contact.jid).toBe("string");
+        expect(typeof contact.phone).toBe("string");
         expect(typeof contact.messageCount).toBe("number");
         expect(contact.messageCount).toBeGreaterThan(0);
       }

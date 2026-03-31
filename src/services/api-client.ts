@@ -82,13 +82,13 @@ export class ApiClient {
     return response.data.contacts;
   }
 
-  async getContact(id: number): Promise<StoreContactDetail> {
-    const response = await this.http.get<StoreContactDetail>(`/contacts/${id}`);
+  async getContact(phone: string): Promise<StoreContactDetail> {
+    const response = await this.http.get<StoreContactDetail>(`/contacts/${phone}`);
     return response.data;
   }
 
-  async getContactGraph(id: number): Promise<StoreContactGraph> {
-    const response = await this.http.get<StoreContactGraph>(`/contacts/${id}/graph`);
+  async getContactGraph(phone: string): Promise<StoreContactGraph> {
+    const response = await this.http.get<StoreContactGraph>(`/contacts/${phone}/graph`);
     return response.data;
   }
 
@@ -341,14 +341,13 @@ export interface StoreMessageSearchResult {
 }
 
 export interface StoreContact {
-  id: number;
-  jid: string;
-  phone: string | null;
+  phone: string;
   push_name: string | null;
   first_seen_at: string;
   last_seen_at: string;
   message_count: number;
   chats_count: number;
+  person_id: number | null;
   google_name: string | null;
   email: string | null;
   organization: string | null;
@@ -356,14 +355,12 @@ export interface StoreContact {
 
 export interface StoreContactDetail {
   contact: {
-    id: number;
-    jid: string;
-    phone: string | null;
+    phone: string;
     push_name: string | null;
     is_me: boolean;
     first_seen_at: string;
     last_seen_at: string;
-    google_name: string | null;
+    person_name: string | null;
     email: string | null;
     organization: string | null;
   };
@@ -375,22 +372,16 @@ export interface StoreContactDetail {
     last_seen_at: string;
     messages_in_chat: number;
   }>;
-  message_stats: {
-    total: number;
-    first_message: string;
-    last_message: string;
-  };
+  jids: Array<{
+    jid: string;
+  }>;
 }
 
 export interface StoreContactGraph {
   contact: {
-    id: number;
-    jid: string;
-    phone: string | null;
+    phone: string;
     push_name: string | null;
-    is_me: boolean;
-    first_seen_at: string;
-    last_seen_at: string;
+    person_name: string | null;
   };
   chats: Array<{
     jid: string;
@@ -399,10 +390,9 @@ export interface StoreContactGraph {
     message_count: number;
   }>;
   connections: Array<{
-    id: number;
+    phone: string;
     push_name: string | null;
-    jid: string;
-    phone: string | null;
+    name: string | null;
     shared_groups: number;
   }>;
 }
@@ -474,8 +464,8 @@ export interface StoreStats {
     last_message_at: string;
   }>;
   top_contacts: Array<{
-    push_name: string | null;
-    jid: string;
+    phone: string;
+    name: string | null;
     message_count: number;
   }>;
 }

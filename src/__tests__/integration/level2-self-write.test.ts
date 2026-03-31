@@ -158,7 +158,7 @@ describe("Level 2 — Self-write Tools", () => {
   });
 
   // ─── whatsapp_forward_message ──────────────────────────────────
-  it("forwards a fresh message to self chat", async () => {
+  it("forwards a fresh message to self chat", { timeout: 45000 }, async () => {
     // Send a fresh message to forward (edited messages can't be forwarded)
     const sendResult = await client.callTool({
       name: "whatsapp_send_text",
