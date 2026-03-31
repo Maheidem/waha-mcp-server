@@ -184,7 +184,8 @@ describe("Level 1 — Read-only Tools", () => {
       for (const msg of parsed.messages) {
         expect(typeof msg.id).toBe("string");
         expect(msg.id.length).toBeGreaterThan(0);
-        expect(typeof msg.from).toBe("string");
+        // Store response uses senderName/senderJid, live uses from
+        expect(typeof (msg.from ?? msg.senderJid ?? msg.senderName)).toBe("string");
         expect(typeof msg.fromMe).toBe("boolean");
         expect(typeof msg.body).toBe("string");
         expect(typeof msg.timestamp).toBe("string");

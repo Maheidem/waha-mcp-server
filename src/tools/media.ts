@@ -46,17 +46,14 @@ Returns:
     },
     async ({ chatId, messageId }) => {
       try {
-        // Read the message live with downloadMedia=true to get the media URL
-        const messages = await api.readMessagesLive(chatId, {
-          limit: 1,
-          downloadMedia: true,
-        }) as Array<Record<string, unknown>>;
+        // Extract file hash from message ID for media download
+        // WAHA message IDs contain the file hash, e.g.:
+        // "false_group@g.us_AC52BAA1FBE44E8557CD15E5C8FB7CC8_sender@lid"
+        // The file hash is between the 2nd and 3rd underscores
+        const parts = messageId.split("_");
+        const fileHash = parts.length >= 3 ? parts[2] : messageId;
 
-        // Find the specific message by ID from the live data
-        // Since live endpoint returns latest messages, we need to use the
-        // media endpoint directly with the file ID
-        // Try downloading via the media endpoint
-        const { data, mimeType } = await api.downloadMedia(config.session, messageId);
+        const { data, mimeType } = await api.downloadMedia(config.session, fileHash);
 
         // Return based on type
         if (mimeType.startsWith("image/")) {

@@ -63,14 +63,15 @@ Returns array of groups with:
     },
     async ({ limit, offset }) => {
       try {
-        const groups = await api.listGroups({ limit, offset }) as GroupInfo[];
+        const resp = await api.listGroups({ limit, offset }) as { groups: Array<{ id: string; name: string; owner: string | null; createdAt: string }>; total: number; count: number; has_more: boolean };
+        const groups = resp.groups || [];
 
         const result = {
           groups: groups.map((g) => ({
-            id: g.JID,
-            name: g.Name,
-            owner: formatPhone(g.OwnerPN),
-            createdAt: g.GroupCreated,
+            id: g.id,
+            name: g.name,
+            owner: g.owner,
+            createdAt: g.createdAt,
           })),
           count: groups.length,
           offset,
@@ -132,31 +133,29 @@ Returns:
     async ({ groupId }) => {
       try {
         const groupData = await api.getGroupInfo(groupId) as {
-          group: GroupInfo;
-          participants: GroupParticipant[];
+          id: string;
+          name: string;
+          topic: string | null;
+          owner: string | null;
+          createdAt: string;
+          settings: { isAnnounce: boolean; isLocked: boolean; isEphemeral: boolean };
+          participantCount: number;
+          participants: Array<{ phone: string | null; lid: string; displayName: string | null; isAdmin: boolean; isSuperAdmin: boolean }>;
         };
-
-        // The API may return the data in different shapes — handle both
-        const groupInfo = groupData.group || groupData as unknown as GroupInfo;
-        const participants = groupData.participants || groupInfo.participants || [];
 
         const result = {
           groupId,
-          name: groupInfo.Name,
-          topic: groupInfo.Topic || null,
-          owner: formatPhone(groupInfo.OwnerPN),
-          createdAt: groupInfo.GroupCreated,
-          settings: {
-            isAnnounce: groupInfo.IsAnnounce,
-            isLocked: groupInfo.IsLocked,
-            isEphemeral: groupInfo.IsEphemeral,
-          },
-          participantCount: participants.length,
-          participants: participants.map((p) => ({
-            phone: formatPhone(p.PhoneNumber),
-            displayName: p.DisplayName || null,
-            isAdmin: p.IsAdmin,
-            isSuperAdmin: p.IsSuperAdmin,
+          name: groupData.name,
+          topic: groupData.topic || null,
+          owner: groupData.owner,
+          createdAt: groupData.createdAt,
+          settings: groupData.settings,
+          participantCount: groupData.participantCount,
+          participants: groupData.participants.map((p) => ({
+            phone: p.phone,
+            displayName: p.displayName || null,
+            isAdmin: p.isAdmin,
+            isSuperAdmin: p.isSuperAdmin,
           })),
         };
 

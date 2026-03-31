@@ -150,6 +150,7 @@ Returns confirmation with the edited message ID.`,
     async ({ chatId, messageId, text }) => {
       try {
         await api.editMessage({
+          chat_id: chatId,
           message_id: messageId,
           text,
           session: api.session,
@@ -199,7 +200,7 @@ Returns confirmation of deletion.`,
     },
     async ({ chatId, messageId }) => {
       try {
-        await api.deleteMessage(messageId, api.session);
+        await api.deleteMessage(messageId, chatId, api.session);
 
         return {
           content: [{

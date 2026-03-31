@@ -29,7 +29,8 @@ Returns:
     },
     async () => {
       try {
-        const session = await api.getSessionStatus() as Record<string, unknown>;
+        const resp = await api.getSessionStatus() as { sessions: Array<Record<string, unknown>> };
+        const session = resp.sessions?.[0] || {} as Record<string, unknown>;
 
         const me = session.me as Record<string, unknown> | null;
         const timestamps = session.timestamps as Record<string, number> | null;
@@ -77,9 +78,10 @@ No parameters required.`,
         const me = await api.getAccount() as Record<string, unknown>;
 
         const result = {
-          id: me.id,
-          pushName: me.pushName,
-          lid: me.lid || null,
+          id: me.jid || me.id,
+          pushName: me.name || me.pushName,
+          phone: me.phone || null,
+          status: me.status || null,
         };
 
         return {

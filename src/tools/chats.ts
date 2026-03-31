@@ -61,7 +61,8 @@ Returns array of chats with:
     async ({ limit, offset }) => {
       try {
         // Use live endpoint for preview/profile pic data
-        const chats = await api.listChatsLive({ limit, offset }) as LiveChat[];
+        const resp = await api.listChatsLive({ limit, offset }) as { chats: LiveChat[] };
+        const chats = resp.chats || [];
 
         const result = {
           chats: chats.map((c) => ({
@@ -164,11 +165,12 @@ Returns:
       try {
         // Helper: query live WAHA messages (used as fallback)
         const queryLive = async () => {
-          const liveData = await api.readMessagesLive(chatId, {
+          const liveResp = await api.readMessagesLive(chatId, {
             limit,
             offset,
             downloadMedia,
-          }) as Array<Record<string, unknown>>;
+          }) as { messages: Array<Record<string, unknown>> };
+          const liveData = liveResp.messages || [];
 
           if (markAsRead && liveData.length > 0) {
             api.markAsRead(chatId).catch(() => {});

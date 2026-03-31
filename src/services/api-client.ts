@@ -208,6 +208,7 @@ export class ApiClient {
   }
 
   async editMessage(body: {
+    chat_id: string;
     message_id: string;
     text: string;
     session?: string;
@@ -216,9 +217,9 @@ export class ApiClient {
     return response.data;
   }
 
-  async deleteMessage(id: string, session?: string): Promise<unknown> {
+  async deleteMessage(id: string, chatId?: string, session?: string): Promise<unknown> {
     const response = await this.http.delete(`/messages/${id}`, {
-      params: session ? { session } : undefined,
+      params: { ...(chatId ? { chat_id: chatId } : {}), ...(session ? { session } : {}) },
     });
     return response.data;
   }
