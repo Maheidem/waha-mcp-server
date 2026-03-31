@@ -11,13 +11,14 @@ import {
 /**
  * Message Store integration tests (Level 1 — read-only).
  *
- * These test the 4 tools backed by the Message Store API (:8200):
+ * These test the 5 store-backed tools:
  *   - whatsapp_search_messages
  *   - whatsapp_contact_graph
  *   - whatsapp_chat_summary
  *   - whatsapp_stats
+ *   - whatsapp_import_chat (structure only — no live file import)
  *
- * Requires: WAHA_API_URL and WAHA_API_KEY env vars pointing to :8200.
+ * Always available — the Message Store API is the single backend.
  */
 
 describe("Message Store Tools", () => {
