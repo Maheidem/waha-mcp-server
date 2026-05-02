@@ -119,6 +119,43 @@ export class ApiClient {
     return response.data;
   }
 
+  // ── Auto-reply transcription flag ──────────────────────────────
+
+  async enableTranscribeFlag(chatJid: string): Promise<{
+    status: string;
+    chat_jid: string;
+    flagged_jids: string[];
+  }> {
+    const response = await this.http.put<{
+      status: string;
+      chat_jid: string;
+      flagged_jids: string[];
+    }>(`/chats/${encodeURIComponent(chatJid)}/transcribe`);
+    return response.data;
+  }
+
+  async disableTranscribeFlag(chatJid: string): Promise<{
+    status: string;
+    chat_jid: string;
+    unflagged_jids: string[];
+  }> {
+    const response = await this.http.delete<{
+      status: string;
+      chat_jid: string;
+      unflagged_jids: string[];
+    }>(`/chats/${encodeURIComponent(chatJid)}/transcribe`);
+    return response.data;
+  }
+
+  async listTranscribeFlags(): Promise<{
+    flags: Array<{ jid: string; name: string | null; chat_type: string }>;
+  }> {
+    const response = await this.http.get<{
+      flags: Array<{ jid: string; name: string | null; chat_type: string }>;
+    }>("/transcribe-flags");
+    return response.data;
+  }
+
   async getStats(): Promise<StoreStats> {
     const response = await this.http.get<StoreStats>("/stats");
     return response.data;

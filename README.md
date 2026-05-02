@@ -160,6 +160,36 @@ Read messages from a specific chat. Powered by persistent message store with ful
 | `downloadMedia` | boolean | No | false | Include media download URLs (live fallback only) |
 | `markAsRead` | boolean | No | false | Mark messages as read after fetching |
 
+#### `whatsapp_transcribe_enable`
+
+Enable auto-reply with transcription on a chat. Once on, voice messages in this chat are transcribed automatically and the transcription is posted back as a quoted reply. **DMs only** -- flagging a group is accepted by the API but the listener will not auto-reply in groups (intentional anti-spam).
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `jid` | string | Yes | Chat JID (e.g., `5511999999999@c.us`) |
+
+Returns `{ status, chat_jid, flagged_jids }`.
+
+#### `whatsapp_transcribe_disable`
+
+Disable auto-reply with transcription on a chat. Idempotent -- succeeds with empty `unflagged_jids` if it was already off.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `jid` | string | Yes | Chat JID |
+
+Returns `{ status, chat_jid, unflagged_jids }`.
+
+#### `whatsapp_transcribe_list`
+
+List all chats with auto-reply transcription enabled. Returns each flagged chat's JID, name, and chat_type.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| -- | -- | -- | No parameters |
+
+Returns `{ flags: [{ jid, name, chat_type }, ...] }`.
+
 ### Messaging
 
 #### `whatsapp_send_text`

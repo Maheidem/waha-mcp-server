@@ -271,4 +271,117 @@ Returns:
       }
     }
   );
+
+  // ── Auto-reply transcription flag ────────────────────────────────
+
+  server.registerTool(
+    "whatsapp_transcribe_enable",
+    {
+      title: "Enable Auto-Reply Transcription",
+      description: `Enable auto-reply with transcription on a WhatsApp chat.
+
+Once enabled, incoming voice/audio messages in this chat will be transcribed
+and the transcription sent back as a quoted reply automatically.
+
+DMs only — flagging a group is allowed by the API but the listener will not
+auto-reply in groups (intentional anti-spam).
+
+Args:
+  - jid: Chat JID (e.g., "5511999999999@c.us")
+
+Returns:
+  - status: "ok"
+  - chat_jid: The JID you passed
+  - flagged_jids: All related JIDs that were flagged (a phone may have multiple)`,
+      inputSchema: {
+        jid: z.string().min(1).max(200).describe("Chat JID (e.g., \"5511999999999@c.us\")"),
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
+    },
+    async ({ jid }) => {
+      try {
+        const result = await api.enableTranscribeFlag(jid);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
+        };
+      } catch (error) {
+        return mcpError(parseApiError(error));
+      }
+    }
+  );
+
+  server.registerTool(
+    "whatsapp_transcribe_disable",
+    {
+      title: "Disable Auto-Reply Transcription",
+      description: `Disable auto-reply with transcription on a WhatsApp chat.
+
+Idempotent — succeeds with empty unflagged_jids if it was already off.
+
+Args:
+  - jid: Chat JID (e.g., "5511999999999@c.us")
+
+Returns:
+  - status: "ok"
+  - chat_jid: The JID you passed
+  - unflagged_jids: Related JIDs that were unflagged (empty if already off)`,
+      inputSchema: {
+        jid: z.string().min(1).max(200).describe("Chat JID (e.g., \"5511999999999@c.us\")"),
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
+    },
+    async ({ jid }) => {
+      try {
+        const result = await api.disableTranscribeFlag(jid);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
+        };
+      } catch (error) {
+        return mcpError(parseApiError(error));
+      }
+    }
+  );
+
+  server.registerTool(
+    "whatsapp_transcribe_list",
+    {
+      title: "List Auto-Reply Transcription Flags",
+      description: `List all WhatsApp chats with auto-reply transcription enabled.
+
+Use this to audit which chats are on, or to confirm a recent enable/disable
+took effect.
+
+Args: none.
+
+Returns:
+  - flags: Array of { jid, name, chat_type } for each flagged chat`,
+      inputSchema: {},
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
+    },
+    async () => {
+      try {
+        const result = await api.listTranscribeFlags();
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
+        };
+      } catch (error) {
+        return mcpError(parseApiError(error));
+      }
+    }
+  );
 }
