@@ -75,6 +75,7 @@ export class ApiClient {
   async listContacts(params?: {
     search?: string;
     chat_jid?: string;
+    kind?: "all" | "person" | "group";
     limit?: number;
     offset?: number;
   }): Promise<StoreContact[]> {
@@ -82,8 +83,9 @@ export class ApiClient {
     return response.data.contacts;
   }
 
-  async getContact(phone: string): Promise<StoreContactDetail> {
-    const response = await this.http.get<StoreContactDetail>(`/contacts/${phone}`);
+  async getContact(contactId: string): Promise<StoreContactDetail> {
+    // Backend resolves digits / *@c.us / *@lid → person detail; *@g.us → group detail.
+    const response = await this.http.get<StoreContactDetail>(`/contacts/${contactId}`);
     return response.data;
   }
 
@@ -119,43 +121,6 @@ export class ApiClient {
     return response.data;
   }
 
-  // ── Auto-reply transcription flag ──────────────────────────────
-
-  async enableTranscribeFlag(chatJid: string): Promise<{
-    status: string;
-    chat_jid: string;
-    flagged_jids: string[];
-  }> {
-    const response = await this.http.put<{
-      status: string;
-      chat_jid: string;
-      flagged_jids: string[];
-    }>(`/chats/${encodeURIComponent(chatJid)}/transcribe`);
-    return response.data;
-  }
-
-  async disableTranscribeFlag(chatJid: string): Promise<{
-    status: string;
-    chat_jid: string;
-    unflagged_jids: string[];
-  }> {
-    const response = await this.http.delete<{
-      status: string;
-      chat_jid: string;
-      unflagged_jids: string[];
-    }>(`/chats/${encodeURIComponent(chatJid)}/transcribe`);
-    return response.data;
-  }
-
-  async listTranscribeFlags(): Promise<{
-    flags: Array<{ jid: string; name: string | null; chat_type: string }>;
-  }> {
-    const response = await this.http.get<{
-      flags: Array<{ jid: string; name: string | null; chat_type: string }>;
-    }>("/transcribe-flags");
-    return response.data;
-  }
-
   async getStats(): Promise<StoreStats> {
     const response = await this.http.get<StoreStats>("/stats");
     return response.data;
@@ -171,17 +136,17 @@ export class ApiClient {
     return response.data;
   }
 
-  async readMessagesLive(chatId: string, params?: {
+  async readMessagesLive(contactId: string, params?: {
     limit?: number;
     offset?: number;
     downloadMedia?: boolean;
   }): Promise<unknown> {
-    const response = await this.http.get(`/chats/${chatId}/messages/live`, { params });
+    const response = await this.http.get(`/chats/${contactId}/messages/live`, { params });
     return response.data;
   }
 
-  async markAsRead(chatId: string): Promise<unknown> {
-    const response = await this.http.post(`/chats/${chatId}/messages/read`);
+  async markAsRead(contactId: string): Promise<unknown> {
+    const response = await this.http.post(`/chats/${contactId}/messages/read`);
     return response.data;
   }
 
@@ -210,23 +175,10 @@ export class ApiClient {
     return response.data;
   }
 
-  async listGroups(params?: {
-    limit?: number;
-    offset?: number;
-  }): Promise<unknown> {
-    const response = await this.http.get("/groups", { params });
-    return response.data;
-  }
-
-  async getGroupInfo(groupId: string): Promise<unknown> {
-    const response = await this.http.get(`/groups/${groupId}`);
-    return response.data;
-  }
-
   // ── Actions (proxied to WAHA) ──────────────────────────────────
 
   async sendText(body: {
-    chat_id: string;
+    contact_id: string;
     text: string;
     session?: string;
     reply_to?: string;
@@ -245,7 +197,7 @@ export class ApiClient {
   }
 
   async editMessage(body: {
-    chat_id: string;
+    contact_id: string;
     message_id: string;
     text: string;
     session?: string;
@@ -254,16 +206,16 @@ export class ApiClient {
     return response.data;
   }
 
-  async deleteMessage(id: string, chatId?: string, session?: string): Promise<unknown> {
+  async deleteMessage(id: string, contactId?: string, session?: string): Promise<unknown> {
     const response = await this.http.delete(`/messages/${id}`, {
-      params: { ...(chatId ? { chat_id: chatId } : {}), ...(session ? { session } : {}) },
+      params: { ...(contactId ? { contact_id: contactId } : {}), ...(session ? { session } : {}) },
     });
     return response.data;
   }
 
   async forwardMessage(body: {
     message_id: string;
-    chat_id: string;
+    contact_id: string;
     session?: string;
   }): Promise<{ id: string; timestamp?: number }> {
     const response = await this.http.post<{ id: string; timestamp?: number }>("/messages/forward", body);
@@ -378,20 +330,30 @@ export interface StoreMessageSearchResult {
 }
 
 export interface StoreContact {
-  phone: string;
-  push_name: string | null;
-  first_seen_at: string;
-  last_seen_at: string;
-  message_count: number;
-  chats_count: number;
-  person_id: number | null;
-  google_name: string | null;
-  email: string | null;
-  organization: string | null;
+  kind?: "person" | "group";
+  id?: string;                          // canonical: phone digits or *@g.us
+  display_name?: string;
+  phone?: string | null;
+  push_name?: string | null;
+  first_seen_at?: string | null;
+  last_seen_at?: string | null;
+  message_count?: number;
+  chats_count?: number | null;
+  member_count?: number | null;
+  last_message_at?: string | null;
+  person_id?: number | null;
+  person_name?: string | null;
+  google_name?: string | null;
+  email?: string | null;
+  organization?: string | null;
 }
 
 export interface StoreContactDetail {
-  contact: {
+  kind: "person" | "group";
+  id: string;
+  display_name: string;
+  // Person-only
+  contact?: {
     phone: string;
     push_name: string | null;
     is_me: boolean;
@@ -401,7 +363,7 @@ export interface StoreContactDetail {
     email: string | null;
     organization: string | null;
   };
-  chats: Array<{
+  chats?: Array<{
     jid: string;
     chat_type: string;
     name: string | null;
@@ -409,9 +371,32 @@ export interface StoreContactDetail {
     last_seen_at: string;
     messages_in_chat: number;
   }>;
-  jids: Array<{
+  jids?: string[];
+  message_stats?: {
+    total: number;
+    first_message: string | null;
+    last_message: string | null;
+  };
+  // Group-only
+  chat?: {
     jid: string;
+    chat_type: string;
+    name: string | null;
+    first_message_at: string | null;
+    last_message_at: string | null;
+    message_count: number;
+  };
+  members?: Array<{
+    phone: string | null;
+    sender_jid: string | null;
+    role: string;
+    first_seen_at: string;
+    last_seen_at: string;
+    display_name: string;
+    push_name: string | null;
+    person_name: string | null;
   }>;
+  member_count?: number;
 }
 
 export interface StoreContactGraph {

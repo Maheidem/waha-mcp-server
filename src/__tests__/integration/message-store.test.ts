@@ -109,10 +109,10 @@ describe("Message Store Tools", () => {
       }
     });
 
-    it("chatId filter scopes to a specific chat", async () => {
+    it("contactId filter scopes to a specific chat", async () => {
       const result = await client.callTool({
         name: "whatsapp_search_messages",
-        arguments: { search: "test", chatId: SELF_CHAT_ID, limit: 5 },
+        arguments: { search: "test", contactId: SELF_CHAT_ID, limit: 5 },
       });
       expect(result.isError).toBeFalsy();
       const parsed = parseToolResult(result) as {
@@ -238,7 +238,7 @@ describe("Message Store Tools", () => {
     it("returns summary for a known chat", async () => {
       const result = await client.callTool({
         name: "whatsapp_chat_summary",
-        arguments: { chatId: storeChatJid },
+        arguments: { contactId: storeChatJid },
       });
       expect(result.isError).toBeFalsy();
       const parsed = parseToolResult(result) as {
@@ -261,7 +261,7 @@ describe("Message Store Tools", () => {
     it("chat detail has date range fields", async () => {
       const result = await client.callTool({
         name: "whatsapp_chat_summary",
-        arguments: { chatId: storeChatJid },
+        arguments: { contactId: storeChatJid },
       });
       const parsed = parseToolResult(result) as {
         chat: {
@@ -278,7 +278,7 @@ describe("Message Store Tools", () => {
     it("each message has sender, body, timestamp, and type", async () => {
       const result = await client.callTool({
         name: "whatsapp_chat_summary",
-        arguments: { chatId: storeChatJid, limit: 5 },
+        arguments: { contactId: storeChatJid, limit: 5 },
       });
       const parsed = parseToolResult(result) as {
         messages: Array<{
@@ -300,7 +300,7 @@ describe("Message Store Tools", () => {
     it("limit parameter restricts message count", async () => {
       const result = await client.callTool({
         name: "whatsapp_chat_summary",
-        arguments: { chatId: storeChatJid, limit: 3 },
+        arguments: { contactId: storeChatJid, limit: 3 },
       });
       const parsed = parseToolResult(result) as { messages: unknown[]; count: number };
       expect(parsed.messages.length).toBeLessThanOrEqual(3);
@@ -310,7 +310,7 @@ describe("Message Store Tools", () => {
     it("invalid chat JID returns error", async () => {
       const result = await client.callTool({
         name: "whatsapp_chat_summary",
-        arguments: { chatId: "0000000000@c.us" },
+        arguments: { contactId: "0000000000@c.us" },
       });
       expect(result.isError).toBeTruthy();
     });

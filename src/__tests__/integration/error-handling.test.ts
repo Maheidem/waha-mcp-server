@@ -20,11 +20,11 @@ describe("Error Handling", () => {
 
   // ─── Input validation ──────────────────────────────────────────
 
-  it("send_text with empty chatId returns validation error", async () => {
+  it("send_text with empty contactId returns validation error", async () => {
     try {
       const result = await client.callTool({
         name: "whatsapp_send_text",
-        arguments: { chatId: "", text: "test" },
+        arguments: { contactId: "", text: "test" },
       });
       expect(result.isError).toBe(true);
     } catch (error) {
@@ -37,7 +37,7 @@ describe("Error Handling", () => {
     try {
       const result = await client.callTool({
         name: "whatsapp_send_text",
-        arguments: { chatId: "5524992272331@c.us", text: "" },
+        arguments: { contactId: "5524992272331@c.us", text: "" },
       });
       expect(result.isError).toBe(true);
     } catch (error) {
@@ -77,18 +77,18 @@ describe("Error Handling", () => {
     expect(result.isError).toBeTruthy();
   });
 
-  it("chat_summary with invalid chatId returns error", async () => {
+  it("chat_summary with invalid contactId returns error", async () => {
     const result = await client.callTool({
       name: "whatsapp_chat_summary",
-      arguments: { chatId: "0000000000@c.us" },
+      arguments: { contactId: "0000000000@c.us" },
     });
     expect(result.isError).toBeTruthy();
   });
 
-  it("get_group_info with invalid groupId returns error", async () => {
+  it("get_contact with invalid group id returns error", async () => {
     const result = await client.callTool({
-      name: "whatsapp_get_group_info",
-      arguments: { groupId: "invalid@g.us" },
+      name: "whatsapp_get_contact",
+      arguments: { contactId: "invalid@g.us" },
     });
     expect(result.isError).toBeTruthy();
   });
@@ -97,7 +97,7 @@ describe("Error Handling", () => {
     try {
       const result = await client.callTool({
         name: "whatsapp_edit_message",
-        arguments: { chatId: "test@c.us", messageId: "test", text: "" },
+        arguments: { contactId: "test@c.us", messageId: "test", text: "" },
       });
       expect(result.isError).toBe(true);
     } catch (error) {
@@ -107,10 +107,10 @@ describe("Error Handling", () => {
 
   // ─── Graceful degradation ─────────────────────────────────────
 
-  it("read_messages with invalid chatId returns error, not crash", async () => {
+  it("read_messages with invalid contactId returns error, not crash", async () => {
     const result = await client.callTool({
       name: "whatsapp_read_messages",
-      arguments: { chatId: "not-a-real-chat-id" },
+      arguments: { contactId: "not-a-real-chat-id" },
     });
     // Should return gracefully — not throw
     expect(result.content).toBeTruthy();
@@ -127,15 +127,15 @@ describe("Error Handling", () => {
     // Trigger several errors
     await client.callTool({
       name: "whatsapp_read_messages",
-      arguments: { chatId: "invalid@xyz" },
+      arguments: { contactId: "invalid@xyz" },
     }).catch(() => {});
     await client.callTool({
       name: "whatsapp_contact_graph",
       arguments: { contactId: 999999 },
     }).catch(() => {});
     await client.callTool({
-      name: "whatsapp_get_group_info",
-      arguments: { groupId: "fake@g.us" },
+      name: "whatsapp_get_contact",
+      arguments: { contactId: "fake@g.us" },
     }).catch(() => {});
 
     // Server should still respond correctly
@@ -151,7 +151,7 @@ describe("Error Handling", () => {
   it("error messages do not contain internal IP addresses", async () => {
     const result = await client.callTool({
       name: "whatsapp_chat_summary",
-      arguments: { chatId: "0000000000@c.us" },
+      arguments: { contactId: "0000000000@c.us" },
     });
     if (result.isError) {
       const content = result.content as Array<{ type: string; text: string }>;

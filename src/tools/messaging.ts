@@ -3,28 +3,30 @@ import { z } from "zod";
 import type { ApiClient } from "../services/api-client.js";
 import { parseApiError, mcpError } from "../utils/errors.js";
 
+const CONTACT_ID_DESC =
+  'Contact id: phone digits for a person (e.g. "5521986910666"; survives @c.us↔@lid flips), or a group JID "*@g.us". Look up via whatsapp_list_contacts.';
+
 export function registerMessagingTools(server: McpServer, api: ApiClient): void {
   server.registerTool(
     "whatsapp_send_text",
     {
       title: "Send WhatsApp Text Message",
-      description: `Send a text message to a WhatsApp chat.
+      description: `Send a text message to a contact (person or group).
 
 CORE tier supports text messages only (no images, video, audio, or documents).
 A rate limit delay is enforced between sends to avoid WhatsApp detection.
 
 Args:
-  - chatId: Recipient chat ID. Format: "5511999999999@c.us" for contacts, "id@g.us" for groups
+  - contactId: ${CONTACT_ID_DESC}
   - text: Message text to send
   - replyTo: Optional message ID to quote-reply to (get from whatsapp_read_messages)
 
 Returns:
   - status: "sent"
   - messageId: The sent message's ID
-  - chatId: Where it was sent`,
+  - contactId: Where it was sent`,
       inputSchema: {
-        chatId: z.string().min(1)
-          .describe('Recipient chat ID. Format: "5511999999999@c.us" for contacts, "id@g.us" for groups'),
+        contactId: z.string().min(1).describe(CONTACT_ID_DESC),
         text: z.string().min(1).max(65536)
           .describe("Text message to send"),
         replyTo: z.string().optional()
@@ -37,12 +39,12 @@ Returns:
         openWorldHint: true,
       },
     },
-    async ({ chatId, text, replyTo }) => {
+    async ({ contactId, text, replyTo }) => {
       try {
         await api.throttleSend();
 
         const result = await api.sendText({
-          chat_id: chatId,
+          contact_id: contactId,
           text,
           session: api.session,
           ...(replyTo ? { reply_to: replyTo } : {}),
@@ -51,7 +53,7 @@ Returns:
         const output = {
           status: "sent",
           messageId: result.id,
-          chatId,
+          contactId,
           timestamp: result.timestamp
             ? new Date(result.timestamp * 1000).toISOString()
             : new Date().toISOString(),
@@ -75,14 +77,13 @@ Returns:
 Use an empty string for the reaction to remove an existing reaction.
 
 Args:
-  - chatId: Chat ID where the message is
+  - contactId: ${CONTACT_ID_DESC}
   - messageId: Message ID to react to (get from whatsapp_read_messages)
   - reaction: Emoji to react with (e.g., "👍", "❤️", "😂"). Empty string removes reaction.
 
 Returns confirmation of the reaction.`,
       inputSchema: {
-        chatId: z.string().min(1)
-          .describe("Chat ID where the message is"),
+        contactId: z.string().min(1).describe(CONTACT_ID_DESC),
         messageId: z.string().min(1)
           .describe("Message ID to react to"),
         reaction: z.string()
@@ -95,7 +96,7 @@ Returns confirmation of the reaction.`,
         openWorldHint: true,
       },
     },
-    async ({ chatId, messageId, reaction }) => {
+    async ({ contactId, messageId, reaction }) => {
       try {
         await api.react({
           message_id: messageId,
@@ -105,7 +106,7 @@ Returns confirmation of the reaction.`,
 
         const output = {
           status: reaction ? "reacted" : "reaction_removed",
-          chatId,
+          contactId,
           messageId,
           reaction: reaction || null,
         };
@@ -119,7 +120,6 @@ Returns confirmation of the reaction.`,
     }
   );
 
-  // ─── whatsapp_edit_message ──────────────────────────────────────
   server.registerTool(
     "whatsapp_edit_message",
     {
@@ -130,13 +130,13 @@ Only works on messages you sent (fromMe=true). WhatsApp shows an "edited" label
 on the message after editing.
 
 Args:
-  - chatId: Chat ID containing the message
+  - contactId: ${CONTACT_ID_DESC}
   - messageId: Message ID to edit (must be your own message)
   - text: New text content
 
 Returns confirmation with the edited message ID.`,
       inputSchema: {
-        chatId: z.string().min(1).describe("Chat ID containing the message"),
+        contactId: z.string().min(1).describe(CONTACT_ID_DESC),
         messageId: z.string().min(1).describe("Message ID to edit (must be your own message)"),
         text: z.string().min(1).max(65536).describe("New text content"),
       },
@@ -147,10 +147,10 @@ Returns confirmation with the edited message ID.`,
         openWorldHint: true,
       },
     },
-    async ({ chatId, messageId, text }) => {
+    async ({ contactId, messageId, text }) => {
       try {
         await api.editMessage({
-          chat_id: chatId,
+          contact_id: contactId,
           message_id: messageId,
           text,
           session: api.session,
@@ -161,7 +161,7 @@ Returns confirmation with the edited message ID.`,
             type: "text" as const,
             text: JSON.stringify({
               status: "edited",
-              chatId,
+              contactId,
               messageId,
             }, null, 2),
           }],
@@ -172,23 +172,21 @@ Returns confirmation with the edited message ID.`,
     }
   );
 
-  // ─── whatsapp_delete_message ────────────────────────────────────
   server.registerTool(
     "whatsapp_delete_message",
     {
       title: "Delete WhatsApp Message",
-      description: `Delete (unsend) a message from a chat.
+      description: `Delete (unsend) a message from a contact's chat.
 
-Removes the message for everyone in the chat. WhatsApp shows
-"This message was deleted" in its place.
+Removes the message for everyone. WhatsApp shows "This message was deleted" in its place.
 
 Args:
-  - chatId: Chat ID containing the message
+  - contactId: ${CONTACT_ID_DESC}
   - messageId: Message ID to delete
 
 Returns confirmation of deletion.`,
       inputSchema: {
-        chatId: z.string().min(1).describe("Chat ID containing the message"),
+        contactId: z.string().min(1).describe(CONTACT_ID_DESC),
         messageId: z.string().min(1).describe("Message ID to delete"),
       },
       annotations: {
@@ -198,16 +196,16 @@ Returns confirmation of deletion.`,
         openWorldHint: true,
       },
     },
-    async ({ chatId, messageId }) => {
+    async ({ contactId, messageId }) => {
       try {
-        await api.deleteMessage(messageId, chatId, api.session);
+        await api.deleteMessage(messageId, contactId, api.session);
 
         return {
           content: [{
             type: "text" as const,
             text: JSON.stringify({
               status: "deleted",
-              chatId,
+              contactId,
               messageId,
             }, null, 2),
           }],
@@ -218,24 +216,22 @@ Returns confirmation of deletion.`,
     }
   );
 
-  // ─── whatsapp_forward_message ───────────────────────────────────
   server.registerTool(
     "whatsapp_forward_message",
     {
       title: "Forward WhatsApp Message",
-      description: `Forward a message from one chat to another.
+      description: `Forward a message from one chat to another contact.
 
 The forwarded message shows a "Forwarded" label in WhatsApp and preserves
 the original sender attribution.
 
 Args:
-  - chatId: Destination chat ID to forward the message TO
+  - contactId: ${CONTACT_ID_DESC} — destination
   - messageId: Message ID to forward (get from whatsapp_read_messages)
 
 Returns confirmation with forwarded message ID.`,
       inputSchema: {
-        chatId: z.string().min(1)
-          .describe("Destination chat ID to forward the message TO"),
+        contactId: z.string().min(1).describe(`${CONTACT_ID_DESC} (destination)`),
         messageId: z.string().min(1)
           .describe("Message ID to forward (from whatsapp_read_messages)"),
       },
@@ -246,20 +242,20 @@ Returns confirmation with forwarded message ID.`,
         openWorldHint: true,
       },
     },
-    async ({ chatId, messageId }) => {
+    async ({ contactId, messageId }) => {
       try {
         await api.throttleSend();
 
         const result = await api.forwardMessage({
           message_id: messageId,
-          chat_id: chatId,
+          contact_id: contactId,
           session: api.session,
         });
 
         const output = {
           status: "forwarded",
           messageId: result.id,
-          destinationChatId: chatId,
+          destinationContactId: contactId,
           originalMessageId: messageId,
           timestamp: result.timestamp
             ? new Date(result.timestamp * 1000).toISOString()

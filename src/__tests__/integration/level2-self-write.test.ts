@@ -29,7 +29,7 @@ describe("Level 2 — Self-write Tools", () => {
     const result = await client.callTool({
       name: "whatsapp_send_text",
       arguments: {
-        chatId: SELF_CHAT_ID,
+        contactId: SELF_CHAT_ID,
         text: `Hello from integration test ${marker}`,
       },
     });
@@ -37,13 +37,13 @@ describe("Level 2 — Self-write Tools", () => {
     const parsed = parseToolResult(result) as {
       status: string;
       messageId: string;
-      chatId: string;
+      contactId: string;
       timestamp: string;
     };
     expect(parsed.status).toBe("sent");
     expect(parsed.messageId).toBeTruthy();
     expect(typeof parsed.messageId).toBe("string");
-    expect(parsed.chatId).toBe(SELF_CHAT_ID);
+    expect(parsed.contactId).toBe(SELF_CHAT_ID);
     // Timestamp should be a valid ISO string
     expect(new Date(parsed.timestamp).getTime()).not.toBeNaN();
 
@@ -58,7 +58,7 @@ describe("Level 2 — Self-write Tools", () => {
 
     const result = await client.callTool({
       name: "whatsapp_read_messages",
-      arguments: { chatId: SELF_CHAT_ID, limit: 5 },
+      arguments: { contactId: SELF_CHAT_ID, limit: 5 },
     });
     expect(result.isError).toBeFalsy();
     const parsed = parseToolResult(result) as {
@@ -79,7 +79,7 @@ describe("Level 2 — Self-write Tools", () => {
     const result = await client.callTool({
       name: "whatsapp_send_text",
       arguments: {
-        chatId: SELF_CHAT_ID,
+        contactId: SELF_CHAT_ID,
         text: `Reply test ${marker}`,
         replyTo: sharedState.selfSentMessageId,
       },
@@ -101,7 +101,7 @@ describe("Level 2 — Self-write Tools", () => {
     const result = await client.callTool({
       name: "whatsapp_react",
       arguments: {
-        chatId: SELF_CHAT_ID,
+        contactId: SELF_CHAT_ID,
         messageId: sharedState.selfSentMessageId!,
         reaction: "\uD83D\uDC4D",
       },
@@ -123,7 +123,7 @@ describe("Level 2 — Self-write Tools", () => {
     const result = await client.callTool({
       name: "whatsapp_react",
       arguments: {
-        chatId: SELF_CHAT_ID,
+        contactId: SELF_CHAT_ID,
         messageId: sharedState.selfSentMessageId!,
         reaction: "",
       },
@@ -141,7 +141,7 @@ describe("Level 2 — Self-write Tools", () => {
     const result = await client.callTool({
       name: "whatsapp_edit_message",
       arguments: {
-        chatId: SELF_CHAT_ID,
+        contactId: SELF_CHAT_ID,
         messageId: sharedState.selfSentMessageId!,
         text: `Edited message ${marker}`,
       },
@@ -149,11 +149,11 @@ describe("Level 2 — Self-write Tools", () => {
     expect(result.isError).toBeFalsy();
     const parsed = parseToolResult(result) as {
       status: string;
-      chatId: string;
+      contactId: string;
       messageId: string;
     };
     expect(parsed.status).toBe("edited");
-    expect(parsed.chatId).toBe(SELF_CHAT_ID);
+    expect(parsed.contactId).toBe(SELF_CHAT_ID);
     expect(parsed.messageId).toBe(sharedState.selfSentMessageId);
   });
 
@@ -163,7 +163,7 @@ describe("Level 2 — Self-write Tools", () => {
     const sendResult = await client.callTool({
       name: "whatsapp_send_text",
       arguments: {
-        chatId: SELF_CHAT_ID,
+        contactId: SELF_CHAT_ID,
         text: `Forward source ${marker}`,
       },
     });
@@ -175,7 +175,7 @@ describe("Level 2 — Self-write Tools", () => {
     const result = await client.callTool({
       name: "whatsapp_forward_message",
       arguments: {
-        chatId: SELF_CHAT_ID,
+        contactId: SELF_CHAT_ID,
         messageId: sent.messageId,
       },
     });
@@ -210,18 +210,18 @@ describe("Level 2 — Self-write Tools", () => {
     const result = await client.callTool({
       name: "whatsapp_delete_message",
       arguments: {
-        chatId: SELF_CHAT_ID,
+        contactId: SELF_CHAT_ID,
         messageId: sharedState.selfReplyMessageId!,
       },
     });
     expect(result.isError).toBeFalsy();
     const parsed = parseToolResult(result) as {
       status: string;
-      chatId: string;
+      contactId: string;
       messageId: string;
     };
     expect(parsed.status).toBe("deleted");
-    expect(parsed.chatId).toBe(SELF_CHAT_ID);
+    expect(parsed.contactId).toBe(SELF_CHAT_ID);
     expect(parsed.messageId).toBe(sharedState.selfReplyMessageId);
   });
 
@@ -229,7 +229,7 @@ describe("Level 2 — Self-write Tools", () => {
   it("markAsRead=true does not error", async () => {
     const result = await client.callTool({
       name: "whatsapp_read_messages",
-      arguments: { chatId: SELF_CHAT_ID, limit: 1, markAsRead: true },
+      arguments: { contactId: SELF_CHAT_ID, limit: 1, markAsRead: true },
     });
     expect(result.isError).toBeFalsy();
   });

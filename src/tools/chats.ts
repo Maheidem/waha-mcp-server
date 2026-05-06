@@ -115,7 +115,7 @@ Use the message ID from results for whatsapp_react or reply_to in whatsapp_send_
 Powered by Message Store — persistent full history with full-text search and sender filtering.
 
 Args:
-  - chatId: Chat ID to read from (e.g., "5511999999999@c.us" for contacts, "id@g.us" for groups)
+  - contactId: Phone digits for a person ("5521986910666"; survives @c.us↔@lid flips), or group JID "*@g.us". Look up via whatsapp_list_contacts.
   - limit: Number of messages to return (1-100, default 20)
   - offset: Skip N messages for pagination (default 0)
   - search: Full-text search within this chat's messages (optional)
@@ -132,7 +132,7 @@ Returns:
   - total: Total matching messages
   - hasMore: Whether more results exist`,
       inputSchema: {
-        chatId: z.string().min(1).describe("Chat ID to read messages from"),
+        contactId: z.string().min(1).describe('Phone digits for a person, or "*@g.us" for a group'),
         limit: z.coerce.number().int().min(1).max(MAX_LIMIT).default(DEFAULT_LIMIT)
           .describe("Number of messages to return (1-100, default 20)"),
         offset: z.coerce.number().int().min(0).default(0)
@@ -161,11 +161,11 @@ Returns:
         openWorldHint: true,
       },
     },
-    async ({ chatId, limit, offset, search, sender, type, since, until, fromMe, downloadMedia, markAsRead }) => {
+    async ({ contactId, limit, offset, search, sender, type, since, until, fromMe, downloadMedia, markAsRead }) => {
       try {
         // Helper: query live WAHA messages (used as fallback)
         const queryLive = async () => {
-          const liveResp = await api.readMessagesLive(chatId, {
+          const liveResp = await api.readMessagesLive(contactId, {
             limit,
             offset,
             downloadMedia,
@@ -173,11 +173,11 @@ Returns:
           const liveData = liveResp.messages || [];
 
           if (markAsRead && liveData.length > 0) {
-            api.markAsRead(chatId).catch(() => {});
+            api.markAsRead(contactId).catch(() => {});
           }
 
           return {
-            chatId,
+            contactId,
             messages: liveData.map((m) => ({
               id: m.id,
               from: m.from,
@@ -198,7 +198,7 @@ Returns:
 
         // Use Message Store — persistent history with search
         const data = await api.searchMessages({
-          chat_jid: chatId,
+          chat_jid: contactId,
           search,
           sender,
           type,
@@ -212,7 +212,7 @@ Returns:
         // If Store returns empty for a DM chat (offset 0, no filters),
         // fall back to live — the Store may not have this chat's messages
         // (e.g., self-chat, or chat predates webhook capture).
-        const isDm = chatId.endsWith("@c.us");
+        const isDm = !contactId.endsWith("@g.us"); // digits or @c.us / @lid all = DM
         const hasFilters = search || sender || type || since || until || fromMe !== undefined;
         if (data.messages.length === 0 && isDm && offset === 0 && !hasFilters) {
           const liveResult = await queryLive();
@@ -230,7 +230,7 @@ Returns:
         }
 
         const result = {
-          chatId,
+          contactId,
           messages: data.messages.map((m) => ({
             id: m.id,
             senderName: m.sender_name,
@@ -272,116 +272,4 @@ Returns:
     }
   );
 
-  // ── Auto-reply transcription flag ────────────────────────────────
-
-  server.registerTool(
-    "whatsapp_transcribe_enable",
-    {
-      title: "Enable Auto-Reply Transcription",
-      description: `Enable auto-reply with transcription on a WhatsApp chat.
-
-Once enabled, incoming voice/audio messages in this chat will be transcribed
-and the transcription sent back as a quoted reply automatically.
-
-DMs only — flagging a group is allowed by the API but the listener will not
-auto-reply in groups (intentional anti-spam).
-
-Args:
-  - jid: Chat JID (e.g., "5511999999999@c.us")
-
-Returns:
-  - status: "ok"
-  - chat_jid: The JID you passed
-  - flagged_jids: All related JIDs that were flagged (a phone may have multiple)`,
-      inputSchema: {
-        jid: z.string().min(1).max(200).describe("Chat JID (e.g., \"5511999999999@c.us\")"),
-      },
-      annotations: {
-        readOnlyHint: false,
-        destructiveHint: false,
-        idempotentHint: true,
-        openWorldHint: true,
-      },
-    },
-    async ({ jid }) => {
-      try {
-        const result = await api.enableTranscribeFlag(jid);
-        return {
-          content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
-        };
-      } catch (error) {
-        return mcpError(parseApiError(error));
-      }
-    }
-  );
-
-  server.registerTool(
-    "whatsapp_transcribe_disable",
-    {
-      title: "Disable Auto-Reply Transcription",
-      description: `Disable auto-reply with transcription on a WhatsApp chat.
-
-Idempotent — succeeds with empty unflagged_jids if it was already off.
-
-Args:
-  - jid: Chat JID (e.g., "5511999999999@c.us")
-
-Returns:
-  - status: "ok"
-  - chat_jid: The JID you passed
-  - unflagged_jids: Related JIDs that were unflagged (empty if already off)`,
-      inputSchema: {
-        jid: z.string().min(1).max(200).describe("Chat JID (e.g., \"5511999999999@c.us\")"),
-      },
-      annotations: {
-        readOnlyHint: false,
-        destructiveHint: false,
-        idempotentHint: true,
-        openWorldHint: true,
-      },
-    },
-    async ({ jid }) => {
-      try {
-        const result = await api.disableTranscribeFlag(jid);
-        return {
-          content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
-        };
-      } catch (error) {
-        return mcpError(parseApiError(error));
-      }
-    }
-  );
-
-  server.registerTool(
-    "whatsapp_transcribe_list",
-    {
-      title: "List Auto-Reply Transcription Flags",
-      description: `List all WhatsApp chats with auto-reply transcription enabled.
-
-Use this to audit which chats are on, or to confirm a recent enable/disable
-took effect.
-
-Args: none.
-
-Returns:
-  - flags: Array of { jid, name, chat_type } for each flagged chat`,
-      inputSchema: {},
-      annotations: {
-        readOnlyHint: true,
-        destructiveHint: false,
-        idempotentHint: true,
-        openWorldHint: true,
-      },
-    },
-    async () => {
-      try {
-        const result = await api.listTranscribeFlags();
-        return {
-          content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
-        };
-      } catch (error) {
-        return mcpError(parseApiError(error));
-      }
-    }
-  );
 }

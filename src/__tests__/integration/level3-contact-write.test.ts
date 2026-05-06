@@ -32,7 +32,7 @@ describeOrSkip("Level 3 — Contact-write Tools (Mariana)", () => {
     const result = await client.callTool({
       name: "whatsapp_send_text",
       arguments: {
-        chatId: MARIANA_CHAT_ID,
+        contactId: MARIANA_CHAT_ID,
         text: `Automated test message — please ignore ${marker}`,
       },
     });
@@ -49,7 +49,7 @@ describeOrSkip("Level 3 — Contact-write Tools (Mariana)", () => {
   it("reacts to latest message in Mariana chat and cleans up", async () => {
     const readResult = await client.callTool({
       name: "whatsapp_read_messages",
-      arguments: { chatId: MARIANA_CHAT_ID, limit: 3 },
+      arguments: { contactId: MARIANA_CHAT_ID, limit: 3 },
     });
     expect(readResult.isError).toBeFalsy();
     const parsed = parseToolResult(readResult) as {
@@ -64,7 +64,7 @@ describeOrSkip("Level 3 — Contact-write Tools (Mariana)", () => {
     const reactResult = await client.callTool({
       name: "whatsapp_react",
       arguments: {
-        chatId: MARIANA_CHAT_ID,
+        contactId: MARIANA_CHAT_ID,
         messageId: latestId,
         reaction: "\u2764\uFE0F",
       },
@@ -77,7 +77,7 @@ describeOrSkip("Level 3 — Contact-write Tools (Mariana)", () => {
     await client.callTool({
       name: "whatsapp_react",
       arguments: {
-        chatId: MARIANA_CHAT_ID,
+        contactId: MARIANA_CHAT_ID,
         messageId: latestId,
         reaction: "",
       },

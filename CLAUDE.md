@@ -1,6 +1,6 @@
 # WAHA WhatsApp MCP Server
 
-MCP server exposing 20 WhatsApp tools to Claude via a unified backend API.
+MCP server exposing 22 WhatsApp tools to Claude via a unified backend API.
 
 ## Architecture
 
@@ -64,7 +64,12 @@ Single backend at `:8200` handles everything. The MCP server never talks to WAHA
 }
 ```
 
-## Tools (20 total)
+## Tools (22 total)
+
+**Contact identifiers (`contactId`).** All chat-targeting tools accept a single `contactId`:
+- **phone digits** — DM target (e.g. `5521986910666`). Universal — survives WhatsApp's @c.us↔@lid JID transitions.
+- **`*@g.us`** — group target. Stable.
+- Legacy WhatsApp JIDs (`*@c.us`, `*@lid`) still work — backend resolves all of them.
 
 ### Session (2)
 1. `whatsapp_session_status` -- Connection status, phone, display name
@@ -85,20 +90,23 @@ Single backend at `:8200` handles everything. The MCP server never talks to WAHA
 10. `whatsapp_download_media` -- Download image/audio/video/doc from message
 11. `whatsapp_transcribe_audio` -- Transcribe voice message (server-side Whisper)
 
-### Groups (2)
-12. `whatsapp_list_groups` -- List groups with names and owners
-13. `whatsapp_get_group_info` -- Group details with participants
-
-### Contacts (2)
-14. `whatsapp_check_number` -- Verify phone number on WhatsApp
-15. `whatsapp_list_contacts` -- Contacts enriched with Google Contacts + activity stats
+### Contacts (3)
+12. `whatsapp_check_number` -- Verify phone number on WhatsApp; returns canonical `contactId`
+13. `whatsapp_list_contacts` -- Unified address book (people + groups). Filter by `kind`. Returns `id` to use as `contactId` everywhere.
+14. `whatsapp_get_contact` -- Detail for a single contact (person OR group), branches on kind
 
 ### Message Store (5)
-16. `whatsapp_search_messages` -- Full-text search across all history
-17. `whatsapp_contact_graph` -- Social graph: shared groups, connections
-18. `whatsapp_chat_summary` -- Readable chat summary with sender names
-19. `whatsapp_stats` -- Activity dashboard: totals, top chats, top contacts
-20. `whatsapp_import_chat` -- Import WhatsApp chat export (ZIP/TXT) into store
+15. `whatsapp_search_messages` -- Full-text search across all history
+16. `whatsapp_contact_graph` -- Social graph: shared groups, connections
+17. `whatsapp_chat_summary` -- Readable chat summary with sender names
+18. `whatsapp_stats` -- Activity dashboard: totals, top chats, top contacts
+19. `whatsapp_import_chat` -- Import WhatsApp chat export (ZIP/TXT) into store
+
+### Auto-Reply (3)
+Phone-scoped flag — survives @c.us ↔ @lid JID transitions automatically. DM voice notes only.
+20. `whatsapp_auto_reply_enable` -- Enable auto-reply transcription for a contact (phone digits)
+21. `whatsapp_auto_reply_disable` -- Disable auto-reply transcription for a contact
+22. `whatsapp_auto_reply_list` -- List contacts with auto-reply enabled (with display names)
 
 ## Backend API Endpoints
 
@@ -146,6 +154,14 @@ POST   /messages/import      # Import chat export
 ```
 POST /contacts/sync         # Sync contacts from WAHA
 POST /contacts/import       # Import Google Contacts CSV
+```
+
+### Auto-Reply (phone-scoped)
+```
+PUT    /contacts/{phone}/auto-reply  # Enable
+DELETE /contacts/{phone}/auto-reply  # Disable
+GET    /contacts/{phone}/auto-reply  # Check
+GET    /auto-replies                 # List all enabled contacts
 ```
 
 ## Server-Side Expert

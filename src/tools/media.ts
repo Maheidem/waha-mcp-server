@@ -21,12 +21,12 @@ Fetches the media attached to a specific message and returns it directly:
 - Video/documents: saved to /tmp/whatsapp-media/ and path returned
 
 Use whatsapp_read_messages first to find messages with hasMedia=true, then pass
-the chatId and messageId here.
+the contactId and messageId here.
 
 Note: Old media (weeks+) may no longer be available on WhatsApp's servers.
 
 Args:
-  - chatId: Chat ID containing the message
+  - contactId: Phone digits or "*@g.us" — the contact whose chat contains the message
   - messageId: Message ID with media to download (from whatsapp_read_messages)
 
 Returns:
@@ -34,7 +34,7 @@ Returns:
   - For audio: the audio content directly
   - For other files: file path where it was saved + metadata`,
       inputSchema: {
-        chatId: z.string().min(1).describe("Chat ID containing the message"),
+        contactId: z.string().min(1).describe('Phone digits or "*@g.us" — chat that contains the media message'),
         messageId: z.string().min(1).describe("Message ID with media to download"),
       },
       annotations: {
@@ -44,7 +44,7 @@ Returns:
         openWorldHint: true,
       },
     },
-    async ({ chatId, messageId }) => {
+    async ({ contactId, messageId }) => {
       try {
         // Extract file hash from message ID for media download
         // WAHA message IDs contain the file hash, e.g.:
@@ -68,7 +68,7 @@ Returns:
                 type: "text" as const,
                 text: JSON.stringify({
                   messageId,
-                  chatId,
+                  contactId,
                   mimeType,
                   sizeBytes: data.length,
                 }, null, 2),
@@ -89,7 +89,7 @@ Returns:
                 type: "text" as const,
                 text: JSON.stringify({
                   messageId,
-                  chatId,
+                  contactId,
                   mimeType,
                   sizeBytes: data.length,
                 }, null, 2),
@@ -116,7 +116,7 @@ Returns:
                 status: "saved",
                 filePath,
                 messageId,
-                chatId,
+                contactId,
                 mimeType,
                 sizeBytes: data.length,
                 filename,
@@ -141,7 +141,7 @@ Server-side transcription via Speaches (Whisper). Optionally replies to the
 original message with the transcription text.
 
 Args:
-  - chatId: Chat ID containing the audio message
+  - contactId: Phone digits or "*@g.us" — the contact whose chat contains the audio
   - messageId: Message ID of the audio to transcribe
   - replyWithTranscription: If true, sends the transcription as a WhatsApp reply to the audio message (default false)
 
@@ -150,7 +150,7 @@ Returns:
   - language: Detected language (if available)
   - replyMessageId: ID of the reply message (if replyWithTranscription=true)`,
       inputSchema: {
-        chatId: z.string().min(1).describe("Chat ID containing the audio message"),
+        contactId: z.string().min(1).describe('Phone digits or "*@g.us" — chat that contains the audio'),
         messageId: z.string().min(1).describe("Message ID of the audio to transcribe"),
         replyWithTranscription: z.coerce.boolean().default(false)
           .describe("If true, sends the transcription as a WhatsApp reply to the audio (default false)"),
@@ -162,7 +162,7 @@ Returns:
         openWorldHint: true,
       },
     },
-    async ({ chatId, messageId, replyWithTranscription }) => {
+    async ({ contactId, messageId, replyWithTranscription }) => {
       try {
         // Transcribe via the API (server-side)
         const result = await api.transcribe({ message_id: messageId }) as Record<string, unknown>;
@@ -174,7 +174,7 @@ Returns:
           await api.throttleSend();
           const replyPrefix = "\u{1F4DD} *Transcri\u00e7\u00e3o:*\n\n";
           const sendResult = await api.sendText({
-            chat_id: chatId,
+            contact_id: contactId,
             text: `${replyPrefix}${transcription}`,
             session: api.session,
             reply_to: messageId,
@@ -185,7 +185,7 @@ Returns:
         const output: Record<string, unknown> = {
           transcription,
           messageId,
-          chatId,
+          contactId,
           language: result.language || "auto",
         };
         if (replyMessageId) {

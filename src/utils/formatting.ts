@@ -8,15 +8,16 @@ export function formatTimestamp(ts: number): string {
 }
 
 /**
- * Extract a display-friendly name from a chat ID.
- * "5511999999999@c.us" → "5511999999999"
- * "120363123456@g.us" → "120363123456 (group)"
+ * Extract a display-friendly name from a contact id.
+ *   "5521986910666"          → "5521986910666"
+ *   "5511999999999@c.us"     → "5511999999999"
+ *   "120363123456@g.us"      → "120363123456 (group)"
  */
-export function formatChatId(chatId: string): string {
-  if (chatId.endsWith("@g.us")) {
-    return chatId.replace("@g.us", "") + " (group)";
+export function formatContactId(contactId: string): string {
+  if (contactId.endsWith("@g.us")) {
+    return contactId.replace("@g.us", "") + " (group)";
   }
-  return chatId.replace("@c.us", "");
+  return contactId.replace(/@(c\.us|lid)$/, "");
 }
 
 /**

@@ -175,7 +175,7 @@ describe("Level 1 — Read-only Tools", () => {
     it("returns messages from self chat", async () => {
       const result = await client.callTool({
         name: "whatsapp_read_messages",
-        arguments: { chatId: SELF_CHAT_ID },
+        arguments: { contactId: SELF_CHAT_ID },
       });
       expect(result.isError).toBeFalsy();
       const parsed = parseToolResult(result) as { messages: unknown[] };
@@ -185,7 +185,7 @@ describe("Level 1 — Read-only Tools", () => {
     it("store response has senderName, senderJid, messageType fields", async () => {
       const result = await client.callTool({
         name: "whatsapp_read_messages",
-        arguments: { chatId: SELF_CHAT_ID, limit: 3 },
+        arguments: { contactId: SELF_CHAT_ID, limit: 3 },
       });
       const parsed = parseToolResult(result) as {
         source: string;
@@ -212,7 +212,7 @@ describe("Level 1 — Read-only Tools", () => {
     it("indicates source as message-store or live", async () => {
       const result = await client.callTool({
         name: "whatsapp_read_messages",
-        arguments: { chatId: SELF_CHAT_ID, limit: 1 },
+        arguments: { contactId: SELF_CHAT_ID, limit: 1 },
       });
       const parsed = parseToolResult(result) as { source: string };
       expect(["message-store", "live"]).toContain(parsed.source);
@@ -221,7 +221,7 @@ describe("Level 1 — Read-only Tools", () => {
     it("limit=1 returns exactly 1 message", async () => {
       const result = await client.callTool({
         name: "whatsapp_read_messages",
-        arguments: { chatId: SELF_CHAT_ID, limit: 1 },
+        arguments: { contactId: SELF_CHAT_ID, limit: 1 },
       });
       const parsed = parseToolResult(result) as { messages: unknown[] };
       expect(parsed.messages.length).toBe(1);
@@ -230,7 +230,7 @@ describe("Level 1 — Read-only Tools", () => {
     it("timestamps are valid ISO strings", async () => {
       const result = await client.callTool({
         name: "whatsapp_read_messages",
-        arguments: { chatId: SELF_CHAT_ID, limit: 5 },
+        arguments: { contactId: SELF_CHAT_ID, limit: 5 },
       });
       const parsed = parseToolResult(result) as {
         messages: Array<{ timestamp: string }>;
@@ -246,7 +246,7 @@ describe("Level 1 — Read-only Tools", () => {
     it("search filter returns only matching messages", async () => {
       const result = await client.callTool({
         name: "whatsapp_read_messages",
-        arguments: { chatId: SELF_CHAT_ID, search: "test", limit: 5 },
+        arguments: { contactId: SELF_CHAT_ID, search: "test", limit: 5 },
       });
       expect(result.isError).toBeFalsy();
       const parsed = parseToolResult(result) as {
@@ -266,7 +266,7 @@ describe("Level 1 — Read-only Tools", () => {
     it("fromMe=true returns only sent messages", async () => {
       const result = await client.callTool({
         name: "whatsapp_read_messages",
-        arguments: { chatId: SELF_CHAT_ID, fromMe: true, limit: 5 },
+        arguments: { contactId: SELF_CHAT_ID, fromMe: true, limit: 5 },
       });
       expect(result.isError).toBeFalsy();
       const parsed = parseToolResult(result) as {
@@ -285,7 +285,7 @@ describe("Level 1 — Read-only Tools", () => {
       const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
       const result = await client.callTool({
         name: "whatsapp_read_messages",
-        arguments: { chatId: SELF_CHAT_ID, since, limit: 5 },
+        arguments: { contactId: SELF_CHAT_ID, since, limit: 5 },
       });
       expect(result.isError).toBeFalsy();
       const parsed = parseToolResult(result) as {
@@ -304,7 +304,7 @@ describe("Level 1 — Read-only Tools", () => {
     it("store response includes total and hasMore", async () => {
       const result = await client.callTool({
         name: "whatsapp_read_messages",
-        arguments: { chatId: SELF_CHAT_ID, limit: 1 },
+        arguments: { contactId: SELF_CHAT_ID, limit: 1 },
       });
       const parsed = parseToolResult(result) as {
         source: string;
@@ -328,7 +328,7 @@ describe("Level 1 — Read-only Tools", () => {
       expect(result.isError).toBeFalsy();
       const parsed = parseToolResult(result) as {
         numberExists: boolean;
-        chatId: string;
+        contactId: string;
       };
       expect(parsed.numberExists).toBe(true);
     });
@@ -403,150 +403,73 @@ describe("Level 1 — Read-only Tools", () => {
     });
   });
 
-  // ─── whatsapp_list_groups ───────────────────────────────────────
-  describe("whatsapp_list_groups", () => {
-    it("returns an array of groups", async () => {
+  // ─── unified groups via whatsapp_list_contacts({kind:'group'}) ──
+  describe("whatsapp_list_contacts (kind=group)", () => {
+    it("returns groups with id ending in @g.us", async () => {
       const result = await client.callTool({
-        name: "whatsapp_list_groups",
-        arguments: { limit: 5 },
+        name: "whatsapp_list_contacts",
+        arguments: { kind: "group", limit: 5 },
       });
       expect(result.isError).toBeFalsy();
       const parsed = parseToolResult(result) as {
-        groups: Array<{
-          id: string;
-          name: string;
-          owner: string | null;
-          createdAt: string;
-        }>;
+        contacts: Array<{ kind: string; id: string; name: string }>;
         count: number;
       };
-      expect(Array.isArray(parsed.groups)).toBe(true);
-      expect(parsed.groups.length).toBeGreaterThan(0);
-      expect(typeof parsed.count).toBe("number");
-    });
-
-    it("each group has id ending in @g.us", async () => {
-      const result = await client.callTool({
-        name: "whatsapp_list_groups",
-        arguments: { limit: 5 },
-      });
-      const parsed = parseToolResult(result) as {
-        groups: Array<{ id: string; name: string }>;
-      };
-      for (const group of parsed.groups) {
-        expect(group.id).toMatch(/@g\.us$/);
-        expect(typeof group.name).toBe("string");
+      expect(Array.isArray(parsed.contacts)).toBe(true);
+      expect(parsed.contacts.length).toBeGreaterThan(0);
+      for (const c of parsed.contacts) {
+        expect(c.kind).toBe("group");
+        expect(c.id).toMatch(/@g\.us$/);
+        expect(typeof c.name).toBe("string");
       }
     });
 
     it("limit=1 returns exactly 1 group", async () => {
       const result = await client.callTool({
-        name: "whatsapp_list_groups",
-        arguments: { limit: 1 },
+        name: "whatsapp_list_contacts",
+        arguments: { kind: "group", limit: 1 },
       });
-      const parsed = parseToolResult(result) as { groups: unknown[] };
-      expect(parsed.groups.length).toBe(1);
-    });
-
-    it("pagination works", async () => {
-      const r1 = await client.callTool({
-        name: "whatsapp_list_groups",
-        arguments: { limit: 1, offset: 0 },
-      });
-      const r2 = await client.callTool({
-        name: "whatsapp_list_groups",
-        arguments: { limit: 1, offset: 1 },
-      });
-      const p1 = parseToolResult(r1) as { groups: Array<{ id: string }> };
-      const p2 = parseToolResult(r2) as { groups: Array<{ id: string }> };
-      if (p1.groups.length > 0 && p2.groups.length > 0) {
-        expect(p1.groups[0].id).not.toBe(p2.groups[0].id);
-      }
+      const parsed = parseToolResult(result) as { contacts: unknown[] };
+      expect(parsed.contacts.length).toBe(1);
     });
   });
 
-  // ─── whatsapp_get_group_info ────────────────────────────────────
-  describe("whatsapp_get_group_info", () => {
+  // ─── unified detail via whatsapp_get_contact(<group_jid>) ───────
+  describe("whatsapp_get_contact (group)", () => {
     let groupId: string;
 
     beforeAll(async () => {
-      // Get a real group ID from list_groups
       const result = await client.callTool({
-        name: "whatsapp_list_groups",
-        arguments: { limit: 1 },
+        name: "whatsapp_list_contacts",
+        arguments: { kind: "group", limit: 1 },
       });
       const parsed = parseToolResult(result) as {
-        groups: Array<{ id: string }>;
+        contacts: Array<{ id: string }>;
       };
-      expect(parsed.groups.length).toBeGreaterThan(0);
-      groupId = parsed.groups[0].id;
+      expect(parsed.contacts.length).toBeGreaterThan(0);
+      groupId = parsed.contacts[0].id;
     });
 
-    it("returns group details with name and participants", async () => {
+    it("returns group detail with members and member_count", async () => {
       const result = await client.callTool({
-        name: "whatsapp_get_group_info",
-        arguments: { groupId },
+        name: "whatsapp_get_contact",
+        arguments: { contactId: groupId },
       });
       expect(result.isError).toBeFalsy();
       const parsed = parseToolResult(result) as {
-        groupId: string;
-        name: string;
-        topic: string | null;
-        owner: string | null;
-        createdAt: string;
-        settings: {
-          isAnnounce: boolean;
-          isLocked: boolean;
-          isEphemeral: boolean;
-        };
-        participantCount: number;
-        participants: Array<{
-          phone: string | null;
-          displayName: string | null;
-          isAdmin: boolean;
-          isSuperAdmin: boolean;
-        }>;
+        kind: string;
+        id: string;
+        display_name: string;
+        chat: { jid: string; chat_type: string; name: string | null };
+        members: Array<{ display_name: string }>;
+        member_count: number;
       };
-      expect(parsed.groupId).toBe(groupId);
-      expect(typeof parsed.name).toBe("string");
-      expect(typeof parsed.participantCount).toBe("number");
-      expect(parsed.participantCount).toBeGreaterThan(0);
-      expect(Array.isArray(parsed.participants)).toBe(true);
-      expect(parsed.participants.length).toBeGreaterThan(0);
-    });
-
-    it("participants have admin status fields", async () => {
-      const result = await client.callTool({
-        name: "whatsapp_get_group_info",
-        arguments: { groupId },
-      });
-      const parsed = parseToolResult(result) as {
-        participants: Array<{
-          isAdmin: boolean;
-          isSuperAdmin: boolean;
-        }>;
-      };
-      for (const p of parsed.participants) {
-        expect(typeof p.isAdmin).toBe("boolean");
-        expect(typeof p.isSuperAdmin).toBe("boolean");
-      }
-    });
-
-    it("settings has announcement/locked/ephemeral flags", async () => {
-      const result = await client.callTool({
-        name: "whatsapp_get_group_info",
-        arguments: { groupId },
-      });
-      const parsed = parseToolResult(result) as {
-        settings: {
-          isAnnounce: boolean;
-          isLocked: boolean;
-          isEphemeral: boolean;
-        };
-      };
-      expect(typeof parsed.settings.isAnnounce).toBe("boolean");
-      expect(typeof parsed.settings.isLocked).toBe("boolean");
-      expect(typeof parsed.settings.isEphemeral).toBe("boolean");
+      expect(parsed.kind).toBe("group");
+      expect(parsed.id).toBe(groupId);
+      expect(typeof parsed.display_name).toBe("string");
+      expect(parsed.chat.chat_type).toBe("group");
+      expect(Array.isArray(parsed.members)).toBe(true);
+      expect(parsed.member_count).toBeGreaterThan(0);
     });
   });
 });

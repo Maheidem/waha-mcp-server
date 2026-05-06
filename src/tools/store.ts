@@ -7,13 +7,16 @@ import { parseApiError, mcpError } from "../utils/errors.js";
 /** Max length for free-text search inputs */
 const MAX_SEARCH_LENGTH = 500;
 
-/** Regex for valid WhatsApp JID formats */
+/** Regex for valid WhatsApp JID formats (legacy aliases still accepted) */
 const JID_PATTERN = /^.+@(c\.us|g\.us|lid)$/;
 
-/** Zod refinement for JID validation */
-const jidSchema = z.string().min(1).max(200)
-  .refine((v) => JID_PATTERN.test(v), {
-    message: "Must be a valid JID (ending in @c.us, @g.us, or @lid)",
+/** Contact identifier: phone digits (person), '*@g.us' (group), or legacy JID. */
+const CONTACT_ID_PATTERN = /^(\d{6,20}|.+@(c\.us|g\.us|lid))$/;
+
+/** Zod refinement for the unified contact identifier */
+const contactIdSchema = z.string().min(1).max(200)
+  .refine((v) => CONTACT_ID_PATTERN.test(v), {
+    message: "Must be phone digits (person) or *@g.us (group)",
   });
 
 /**
@@ -33,7 +36,7 @@ date ranges, sender filtering, and message type filtering.
 
 Args:
   - search: Text to search for (case insensitive, supports Portuguese/unicode)
-  - chatId: Scope search to a specific chat JID (optional)
+  - contactId: Scope search to one contact (phone digits or "*@g.us") (optional)
   - sender: Filter by sender name or JID (optional)
   - since: ISO date string — messages after this date (optional)
   - until: ISO date string — messages before this date (optional)
@@ -51,8 +54,8 @@ Note: sender_name may be null for some messages.`,
       inputSchema: {
         search: z.string().min(1).max(MAX_SEARCH_LENGTH)
           .describe("Text to search for (case insensitive)"),
-        chatId: jidSchema.optional()
-          .describe("Scope search to a specific chat JID (optional)"),
+        contactId: contactIdSchema.optional()
+          .describe('Scope search to one contact: phone digits (person) or "*@g.us" (group). Optional.'),
         sender: z.string().max(MAX_SEARCH_LENGTH).optional()
           .describe("Filter by sender name or JID (optional)"),
         since: z.string().max(30).optional()
@@ -75,11 +78,11 @@ Note: sender_name may be null for some messages.`,
         openWorldHint: true,
       },
     },
-    async ({ search, chatId, sender, since, until, type, fromMe, limit, offset }) => {
+    async ({ search, contactId, sender, since, until, type, fromMe, limit, offset }) => {
       try {
         const result = await api.searchMessages({
           search,
-          chat_jid: chatId,
+          chat_jid: contactId, // backend resolve_chat_jids accepts digits or JID
           sender,
           since,
           until,
@@ -205,14 +208,14 @@ This is optimized for readability — use whatsapp_read_messages for structured 
 with filtering, or whatsapp_search_messages for full-text search.
 
 Args:
-  - chatId: Chat JID (e.g., "5511999999999@c.us" or "id@g.us")
+  - contactId: Phone digits for a person, or "*@g.us" for a group
   - limit: Number of recent messages to include (1-200, default 50)
 
 Returns:
   - chat: Name, type, message count, date range
   - messages: Recent messages with sender name, body, timestamp, type`,
       inputSchema: {
-        chatId: jidSchema.describe("Chat JID (e.g., '5511999999999@c.us' or 'id@g.us')"),
+        contactId: contactIdSchema.describe('Phone digits for a person, or "*@g.us" for a group'),
         limit: z.coerce.number().int().min(1).max(200).default(50)
           .describe("Number of recent messages to include (1-200, default 50)"),
       },
@@ -223,9 +226,9 @@ Returns:
         openWorldHint: true,
       },
     },
-    async ({ chatId, limit }) => {
+    async ({ contactId, limit }) => {
       try {
-        const summary = await api.getChatSummary(chatId, limit);
+        const summary = await api.getChatSummary(contactId, limit);
 
         const response = {
           chat: {
@@ -280,7 +283,7 @@ top contacts, and group/DM breakdown.
 No arguments needed. Returns:
   - Totals: messages, contacts, chats, groups, DMs
   - Activity: messages today, this week
-  - Top 5 chats by message count (name may be null for groups — use whatsapp_get_group_info to look up)
+  - Top 5 chats by message count (name may be null for groups — use whatsapp_get_contact to look up)
   - Top 5 contacts by message count`,
       inputSchema: {},
       annotations: {

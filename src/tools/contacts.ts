@@ -4,6 +4,8 @@ import type { ApiClient } from "../services/api-client.js";
 import { DEFAULT_LIMIT, MAX_LIMIT, CHARACTER_LIMIT } from "../constants.js";
 import { parseApiError, mcpError } from "../utils/errors.js";
 
+const CONTACT_ID_PATTERN = /^(\d{6,20}|.+@(c\.us|g\.us|lid))$/;
+
 export function registerContactTools(server: McpServer, api: ApiClient): void {
   server.registerTool(
     "whatsapp_check_number",
@@ -11,14 +13,14 @@ export function registerContactTools(server: McpServer, api: ApiClient): void {
       title: "Check WhatsApp Number",
       description: `Check if a phone number is registered on WhatsApp.
 
-Use this before sending a message to verify the number exists on WhatsApp.
+Use this before sending a message to a number not yet in your address book.
 
 Args:
   - phone: Phone number with country code, no spaces or dashes (e.g., "5511999999999")
 
 Returns:
   - numberExists: true if registered on WhatsApp
-  - chatId: The chat ID to use for messaging (e.g., "5511999999999@c.us")`,
+  - contactId: The id to use as contactId in other tools (the same phone digits)`,
       inputSchema: {
         phone: z.string().min(1)
           .describe('Phone number with country code, no spaces/dashes (e.g., "5511999999999")'),
@@ -33,9 +35,15 @@ Returns:
     async ({ phone }) => {
       try {
         const result = await api.checkNumber(phone);
-
+        // Re-shape: contactId for the LLM (digits only), keep chatId for back-compat
+        const contactId = (result.chatId || "").replace(/@(c\.us|lid)$/, "") || phone;
+        const output = {
+          numberExists: result.numberExists,
+          contactId,
+          chatId: result.chatId,
+        };
         return {
-          content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
+          content: [{ type: "text" as const, text: JSON.stringify(output, null, 2) }],
         };
       } catch (error) {
         return mcpError(parseApiError(error));
@@ -46,27 +54,33 @@ Returns:
   server.registerTool(
     "whatsapp_list_contacts",
     {
-      title: "List WhatsApp Contacts",
-      description: `List WhatsApp contacts with names and activity stats.
+      title: "List WhatsApp Contacts (people + groups)",
+      description: `Unified address book — lists people you DM and groups you're in.
 
-Powered by Message Store — supports name search and shows activity stats, enriched with Google Contacts.
+Use the returned 'id' as contactId in any chat-targeting tool (send_text, read_messages, etc.):
+  - Person: id = phone digits (universal — survives @c.us↔@lid flips)
+  - Group:  id = group JID (e.g. "120363...@g.us")
 
 Args:
-  - search: Filter contacts by name (optional)
-  - limit: Maximum contacts to return (1-100, default 20)
-  - offset: Pagination offset (default 0)
+  - kind: "person" | "group" | "all" (default "all")
+  - search: Filter by name or id (optional)
+  - limit: Maximum rows to return (1-100, default 20)
+  - offset: Pagination offset for the persons section (default 0)
 
 Returns array of contacts with:
-  - id: Contact JID (use as chatId in other tools)
-  - name: Display name
-  - messageCount: Total messages from this contact
-  - chatsCount: Number of chats this contact is in
-  - firstSeen/lastSeen: Activity timestamps`,
+  - kind: "person" | "group"
+  - id: phone digits or group JID — pass to other tools
+  - name: display name (Google Contact name → push name → phone/jid fallback)
+  - messageCount, lastMessageAt: activity stats
+  - For persons: pushName, googleName, email, organization
+  - For groups: memberCount`,
       inputSchema: {
+        kind: z.enum(["person", "group", "all"]).default("all")
+          .describe("Filter by contact type (default 'all')"),
         search: z.string().max(500).optional()
-          .describe("Filter contacts by name (optional)"),
+          .describe("Filter by name or id (optional)"),
         limit: z.coerce.number().int().min(1).max(MAX_LIMIT).default(DEFAULT_LIMIT)
-          .describe("Maximum contacts to return (1-100, default 20)"),
+          .describe("Maximum rows to return (1-100, default 20)"),
         offset: z.coerce.number().int().min(0).default(0)
           .describe("Pagination offset (default 0)"),
       },
@@ -77,26 +91,30 @@ Returns array of contacts with:
         openWorldHint: true,
       },
     },
-    async ({ search, limit, offset }) => {
+    async ({ kind, search, limit, offset }) => {
       try {
-        // Use store endpoint for enriched data
-        const contacts = await api.listContacts({ search, limit, offset });
+        const contacts = await api.listContacts({ kind, search, limit, offset });
 
         const result = {
           contacts: contacts.map((c) => ({
-            id: c.phone,
-            name: c.google_name || c.push_name || c.phone,
-            pushName: c.push_name,
-            googleName: c.google_name,
-            phone: c.phone,
-            email: c.email,
-            organization: c.organization,
+            kind: c.kind,
+            id: c.id ?? c.phone, // fallback for any older response shape
+            name: c.display_name ?? c.person_name ?? c.push_name ?? c.phone ?? c.id,
+            ...(c.kind === "person" ? {
+              phone: c.phone,
+              pushName: c.push_name,
+              googleName: c.person_name,
+              email: c.email,
+              organization: c.organization,
+              chatsCount: c.chats_count,
+            } : {
+              memberCount: c.member_count,
+            }),
             messageCount: c.message_count,
-            chatsCount: c.chats_count,
-            firstSeen: c.first_seen_at,
-            lastSeen: c.last_seen_at,
+            lastMessageAt: c.last_message_at,
           })),
           count: contacts.length,
+          kind,
           offset,
           hasMore: contacts.length === limit,
           source: "message-store" as const,
@@ -108,7 +126,7 @@ Returns array of contacts with:
             ...result,
             contacts: result.contacts.slice(0, Math.ceil(result.contacts.length / 2)),
             truncated: true,
-            truncationNote: "Response truncated. Use a smaller 'limit' or increase 'offset'.",
+            truncationNote: "Response truncated. Use a smaller 'limit', increase 'offset', or filter by 'kind'.",
           };
           text = JSON.stringify(truncated, null, 2);
         }
@@ -116,6 +134,51 @@ Returns array of contacts with:
         return {
           content: [{ type: "text" as const, text }],
         };
+      } catch (error) {
+        return mcpError(parseApiError(error));
+      }
+    }
+  );
+
+  server.registerTool(
+    "whatsapp_get_contact",
+    {
+      title: "Get Contact Detail (person or group)",
+      description: `Detail for a single contact — person OR group, by stable id.
+
+Returns shape depends on kind:
+  - Person: contact (phone, names, email, org), all chats they appear in, all JID variants, message stats.
+  - Group:  chat (group metadata), members with display names, member_count.
+
+Args:
+  - contactId: phone digits (person; "5521986910666"), or "*@g.us" (group). Look up via whatsapp_list_contacts.`,
+      inputSchema: {
+        contactId: z.string().regex(CONTACT_ID_PATTERN, "phone digits or *@g.us")
+          .describe('Phone digits for a person, or "*@g.us" for a group'),
+      },
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
+    },
+    async ({ contactId }) => {
+      try {
+        const detail = await api.getContact(contactId);
+
+        let text = JSON.stringify(detail, null, 2);
+        if (text.length > CHARACTER_LIMIT && detail.kind === "group" && detail.members) {
+          const truncated = {
+            ...detail,
+            members: detail.members.slice(0, Math.ceil(detail.members.length / 2)),
+            truncated: true,
+            truncationNote: "Member list truncated — fetch chat members separately if needed.",
+          };
+          text = JSON.stringify(truncated, null, 2);
+        }
+
+        return { content: [{ type: "text" as const, text }] };
       } catch (error) {
         return mcpError(parseApiError(error));
       }
