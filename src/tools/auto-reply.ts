@@ -3,43 +3,54 @@ import { z } from "zod";
 import type { ApiClient } from "../services/api-client.js";
 import { parseApiError, mcpError } from "../utils/errors.js";
 
-interface AutoReplyState {
-  phone: string;
-  found?: boolean;
-  enabled: boolean;
-  status?: string;
+const CONTACT_ID_PATTERN = /^(\d{6,20}|[^\s/]+@g\.us)$/;
+
+type ContactArgs = {
+  contactId?: string;
+  phone?: string;
+};
+
+function resolveContactId({ contactId, phone }: ContactArgs): string {
+  if (contactId && phone && contactId !== phone) {
+    throw new Error("Provide either contactId or the deprecated phone alias, not conflicting values.");
+  }
+  const value = contactId ?? phone;
+  if (!value) {
+    throw new Error("contactId is required (the legacy phone field is also accepted).");
+  }
+  if (!CONTACT_ID_PATTERN.test(value)) {
+    throw new Error("contactId must be phone digits or a group JID ending in @g.us.");
+  }
+  return value;
 }
 
-interface AutoReplyList {
-  contacts: Array<{
-    phone: string;
-    display_name: string;
-    person_name: string | null;
-    push_name: string | null;
-  }>;
-}
+const contactInput = {
+  contactId: z.string().min(1).max(200).optional()
+    .describe('Phone digits for a person or "*@g.us" for a group'),
+  phone: z.string().min(1).max(20).optional()
+    .describe("Deprecated alias for a person's phone digits; prefer contactId"),
+};
 
 export function registerAutoReplyTools(server: McpServer, api: ApiClient): void {
   server.registerTool(
     "whatsapp_auto_reply_enable",
     {
-      title: "Enable Auto-Reply Transcription",
-      description: `Enable auto-reply with audio transcription for a contact.
+      title: "Enable Automatic Voice-Note Replies",
+      description: `Enable automatic transcription replies for a person or group.
 
-When the contact sends a voice note, the transcription is sent back as a quoted reply automatically. DM only — voice notes in groups are never auto-replied even if a member is flagged.
-
-The flag is contact/phone-scoped, so it follows the contact across WhatsApp's @c.us → @lid JID transitions automatically — no need to re-flag when WhatsApp migrates the JID.
+When a voice note arrives, the backend transcribes it and sends a quoted reply.
+The setting is phone-scoped for people (so it survives @c.us↔@lid changes) and
+group-JID-scoped for groups. The optional contextual mode uses recent conversation
+history to clean up the transcription and can add a short recap.
 
 Args:
-  - phone: Phone number digits only, no @, no spaces (e.g., "5521986910666"). Look up via whatsapp_list_contacts first if you only know the name.
-
-Returns:
-  - status: "ok" on success
-  - phone: the canonical phone
-  - enabled: true`,
+  - contactId: Phone digits for a person, or "*@g.us" for a group
+  - contextual: Also enable contextual enhancement for this conversation (optional)
+  - phone: Deprecated alias for contactId, retained for v2 compatibility`,
       inputSchema: {
-        phone: z.string().regex(/^\d+$/, "phone must be digits only")
-          .describe('Phone digits only with country code (e.g., "5521986910666")'),
+        ...contactInput,
+        contextual: z.boolean().optional()
+          .describe("Enable contextual transcription cleanup/recap for this conversation"),
       },
       annotations: {
         readOnlyHint: false,
@@ -48,33 +59,35 @@ Returns:
         openWorldHint: true,
       },
     },
-    async ({ phone }) => {
+    async ({ contactId, phone, contextual }) => {
       try {
-        const result = await api.put<AutoReplyState>(`/contacts/${phone}/auto-reply`);
-        return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
+        const id = resolveContactId({ contactId, phone });
+        const result = await api.setAutoReply(id, contextual);
+        return {
+          content: [{
+            type: "text" as const,
+            text: JSON.stringify({ contactId: id, ...result }, null, 2),
+          }],
+        };
       } catch (error) {
         return mcpError(parseApiError(error));
       }
-    }
+    },
   );
 
   server.registerTool(
     "whatsapp_auto_reply_disable",
     {
-      title: "Disable Auto-Reply Transcription",
-      description: `Disable auto-reply with audio transcription for a contact.
+      title: "Disable Automatic Voice-Note Replies",
+      description: `Disable automatic transcription replies for a person or group.
 
 Args:
-  - phone: Phone number digits only, no @, no spaces (e.g., "5521986910666").
+  - contactId: Phone digits for a person, or "*@g.us" for a group
+  - phone: Deprecated alias for contactId, retained for v2 compatibility
 
-Returns:
-  - status: "ok"
-  - phone: the canonical phone
-  - enabled: false`,
-      inputSchema: {
-        phone: z.string().regex(/^\d+$/, "phone must be digits only")
-          .describe('Phone digits only with country code (e.g., "5521986910666")'),
-      },
+The operation is idempotent. Contextual mode remains stored by the backend but is
+inactive while automatic replies are disabled.`,
+      inputSchema: contactInput,
       annotations: {
         readOnlyHint: false,
         destructiveHint: false,
@@ -82,24 +95,63 @@ Returns:
         openWorldHint: true,
       },
     },
-    async ({ phone }) => {
+    async ({ contactId, phone }) => {
       try {
-        const result = await api.delete<AutoReplyState>(`/contacts/${phone}/auto-reply`);
-        return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
+        const id = resolveContactId({ contactId, phone });
+        const result = await api.disableAutoReply(id);
+        return {
+          content: [{
+            type: "text" as const,
+            text: JSON.stringify({ contactId: id, ...result }, null, 2),
+          }],
+        };
       } catch (error) {
         return mcpError(parseApiError(error));
       }
-    }
+    },
+  );
+
+  server.registerTool(
+    "whatsapp_auto_reply_status",
+    {
+      title: "Automatic Voice-Note Reply Status",
+      description: `Check whether automatic transcription replies are enabled for a person or group.
+
+Args:
+  - contactId: Phone digits for a person, or "*@g.us" for a group
+  - phone: Deprecated alias for contactId`,
+      inputSchema: contactInput,
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
+    },
+    async ({ contactId, phone }) => {
+      try {
+        const id = resolveContactId({ contactId, phone });
+        const result = await api.getAutoReply(id);
+        return {
+          content: [{
+            type: "text" as const,
+            text: JSON.stringify({ contactId: id, ...result }, null, 2),
+          }],
+        };
+      } catch (error) {
+        return mcpError(parseApiError(error));
+      }
+    },
   );
 
   server.registerTool(
     "whatsapp_auto_reply_list",
     {
-      title: "List Contacts with Auto-Reply Enabled",
-      description: `List every contact that currently has auto-reply transcription enabled, with display names from Google Contacts (when matched) or WhatsApp push name fallback.
+      title: "List Automatic Voice-Note Replies",
+      description: `List all people and groups with automatic transcription replies enabled.
 
-Returns:
-  - contacts: array of { phone, display_name, person_name, push_name }`,
+Returns a normalized autoReplies array plus the backend's contacts and groups arrays
+for compatibility with existing clients.`,
       inputSchema: {},
       annotations: {
         readOnlyHint: true,
@@ -110,11 +162,27 @@ Returns:
     },
     async () => {
       try {
-        const result = await api.get<AutoReplyList>("/auto-replies");
-        return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
+        const result = await api.listAutoReplies();
+        const groups = result.groups ?? [];
+        const autoReplies = [
+          ...result.contacts.map((contact) => ({
+            kind: "person" as const,
+            contactId: contact.phone,
+            displayName: contact.display_name,
+          })),
+          ...groups.map((group) => ({
+            kind: "group" as const,
+            contactId: group.jid,
+            displayName: group.display_name,
+          })),
+        ];
+        const output = { ...result, groups, autoReplies, count: autoReplies.length };
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify(output, null, 2) }],
+        };
       } catch (error) {
         return mcpError(parseApiError(error));
       }
-    }
+    },
   );
 }

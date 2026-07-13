@@ -1,190 +1,82 @@
 # WAHA WhatsApp MCP Server
 
-MCP server exposing 22 WhatsApp tools to Claude via a unified backend API.
+MCP server exposing the unified WAHA backend to MCP clients.
 
 ## Architecture
 
+```text
+MCP client → this stdio server → unified backend /api on :8200
+                                      ├─ PostgreSQL message store
+                                      ├─ WAHA live proxy
+                                      ├─ voice transcription/TTS
+                                      └─ media analysis/archive worker
 ```
-Claude/MCP Client → [This MCP Server] → [Message Store API :8200] → PostgreSQL (reads) + WAHA :33001 (writes)
-```
 
-Single backend at `:8200` handles everything. The MCP server never talks to WAHA directly.
+The MCP server never connects to WAHA, PostgreSQL, Nextcloud, or model providers
+directly. Operator-only `/manage/api/*` routes are deliberately not exposed.
 
-### Backend API (what the MCP server connects to)
+## Local Backend
 
-| Property | Value |
-|----------|-------|
-| **Base URL** | `http://192.168.31.154:8200/api` |
-| **API Key** | `***REMOVED***` |
-| **Auth Header** | `X-API-Key` |
+- Backend base URL: `http://<backend-host>:8200/api`
+- Auth header: `X-API-Key`
+- Session default: `default`
+- Current compatibility baseline: `../waha-backend` commit `46acc32`
 
-### WAHA Instance (behind the backend, not accessed directly)
-
-| Property | Value |
-|----------|-------|
-| **Host** | `192.168.31.154` (Proxmox LXC) |
-| **WAHA URL** | `http://192.168.31.154:33001/api` |
-| **Dashboard** | `http://192.168.31.154:33001/dashboard` |
-| **Swagger** | `http://192.168.31.154:33001/` |
-| **WAHA API Key** | `***REMOVED***` |
-| **Version** | v2026.3.4 |
-| **Engine** | GOWS (Go WebSocket -- direct protocol, no browser) |
-| **Tier** | CORE (free) |
-| **Session** | `default` |
-| **Connected Phone** | +55 24 99227-2331 (Marcos Heidemann) |
-| **WhatsApp ID** | `5524992272331@c.us` |
-
-### CORE Tier Limitations
-- **Can send**: Text messages only
-- **Cannot send**: Images, video, audio, documents, stickers (PLUS tier required, $19/mo)
-- **Can receive**: All message types (text, media, etc.)
-- **Sessions**: 1 max
+Never store live API keys in tracked files. Load them from the MCP client's secret
+environment or the server-management private credential store.
 
 ## Environment Variables
 
 | Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `WAHA_API_URL` | No | `http://localhost:8200/api` | Backend API base URL |
-| `WAHA_API_KEY` | **Yes** | -- | Backend API key |
-| `WAHA_SESSION` | No | `default` | WAHA session name |
-| `WAHA_SEND_DELAY_MS` | No | `1000` | Min delay (ms) between sends |
+|---|---:|---|---|
+| `WAHA_API_URL` | no | `http://localhost:8200/api` | Unified backend API URL |
+| `WAHA_API_KEY` | yes | — | Unified backend API key |
+| `WAHA_SESSION` | no | `default` | WAHA session |
+| `WAHA_SEND_DELAY_MS` | no | `1000` | Non-negative send throttle |
 
-## MCP Config (Mac)
+## Current Tool Surface (28)
 
-```json
-{
-  "waha-whatsapp": {
-    "command": "npx",
-    "args": ["--yes", "@marcos-heidemann/waha-mcp-server"],
-    "env": {
-      "WAHA_API_URL": "http://192.168.31.154:8200/api",
-      "WAHA_API_KEY": "***REMOVED***"
-    }
-  }
-}
-```
+- Session: status, account info
+- Chats: live overview, persistent/live message reads
+- Messaging: send, react, edit, delete, copy/forward text
+- Media: download, transcribe, generate speech
+- Contacts: number check, unified people/groups list, detail
+- Store: search, graph, summary, stats, chat-export import
+- Auto-reply: enable, disable, status, list (people and groups; contextual mode)
+- Automation: media settings get/update/disable, combined health
 
-## Tools (22 total)
+Person-facing tools use phone digits as the stable identifier; groups use `*@g.us`.
+Legacy `@c.us`/`@lid` identifiers remain accepted where the backend supports them.
 
-**Contact identifiers (`contactId`).** All chat-targeting tools accept a single `contactId`:
-- **phone digits** — DM target (e.g. `5521986910666`). Universal — survives WhatsApp's @c.us↔@lid JID transitions.
-- **`*@g.us`** — group target. Stable.
-- Legacy WhatsApp JIDs (`*@c.us`, `*@lid`) still work — backend resolves all of them.
+## Known Backend Boundaries
 
-### Session (2)
-1. `whatsapp_session_status` -- Connection status, phone, display name
-2. `whatsapp_account_info` -- Authenticated account details
+- Manual `/messages/send` does not currently implement quoted replies. The MCP
+  rejects `replyTo` without sending instead of silently sending an unquoted message.
+- `/messages/forward` copies stored text into a new message; it does not preserve
+  media, sender attribution, or WhatsApp's Forwarded label.
+- Public message type filtering still uses `message_type`; some GOWS media is stored
+  there as `chat` while the accurate type is only in `normalized_type`.
+- Public chat summary is not fully LID-alias-aware and does not accept imported
+  `*@import` chat IDs. Use read/search for those histories.
+- Nextcloud folder discovery, archive review/actions, and LLM/Motor configuration
+  remain LAN-only management functions and are not part of this MCP.
 
-### Chats (2)
-3. `whatsapp_list_chats` -- Recent chats with previews and profile pics (live)
-4. `whatsapp_read_messages` -- Read messages with full-text search, sender filter, date range (store + live fallback)
-
-### Messaging (5)
-5. `whatsapp_send_text` -- Send text (with optional quote-reply)
-6. `whatsapp_react` -- React to message with emoji
-7. `whatsapp_edit_message` -- Edit own sent message
-8. `whatsapp_delete_message` -- Delete (unsend) message
-9. `whatsapp_forward_message` -- Forward message to another chat
-
-### Media (2)
-10. `whatsapp_download_media` -- Download image/audio/video/doc from message
-11. `whatsapp_transcribe_audio` -- Transcribe voice message (server-side Whisper)
-
-### Contacts (3)
-12. `whatsapp_check_number` -- Verify phone number on WhatsApp; returns canonical `contactId`
-13. `whatsapp_list_contacts` -- Unified address book (people + groups). Filter by `kind`. Returns `id` to use as `contactId` everywhere.
-14. `whatsapp_get_contact` -- Detail for a single contact (person OR group), branches on kind
-
-### Message Store (5)
-15. `whatsapp_search_messages` -- Full-text search across all history
-16. `whatsapp_contact_graph` -- Social graph: shared groups, connections
-17. `whatsapp_chat_summary` -- Readable chat summary with sender names
-18. `whatsapp_stats` -- Activity dashboard: totals, top chats, top contacts
-19. `whatsapp_import_chat` -- Import WhatsApp chat export (ZIP/TXT) into store
-
-### Auto-Reply (3)
-Phone-scoped flag — survives @c.us ↔ @lid JID transitions automatically. DM voice notes only.
-20. `whatsapp_auto_reply_enable` -- Enable auto-reply transcription for a contact (phone digits)
-21. `whatsapp_auto_reply_disable` -- Disable auto-reply transcription for a contact
-22. `whatsapp_auto_reply_list` -- List contacts with auto-reply enabled (with display names)
-
-## Backend API Endpoints
-
-All routes under `http://192.168.31.154:8200/api`:
-
-### Data (PostgreSQL)
-```
-GET  /messages              # Search messages (full-text, filters)
-GET  /messages/{id}         # Get single message
-GET  /contacts              # List contacts (enriched)
-GET  /contacts/{id}         # Contact detail
-GET  /contacts/{id}/graph   # Social graph
-GET  /chats                 # List chats
-GET  /chats/{jid}           # Chat detail with members
-GET  /chats/{jid}/summary   # Readable chat summary
-GET  /stats                 # Activity dashboard
-```
-
-### Live (proxied to WAHA)
-```
-GET  /chats/live            # Live chats with previews/profile pics
-GET  /chats/{id}/messages/live  # Live messages from WAHA
-POST /chats/{id}/messages/read  # Mark as read
-GET  /session/status        # Session status
-GET  /account               # Account info
-GET  /contacts/all          # All contacts (live)
-GET  /contacts/check        # Check number exists
-GET  /groups                # List groups
-GET  /groups/{id}           # Group info with participants
-```
-
-### Actions (proxied to WAHA)
-```
-POST   /messages/send       # Send text
-POST   /messages/react      # React to message
-PUT    /messages/edit        # Edit message
-DELETE /messages/{id}        # Delete message
-POST   /messages/forward     # Forward message
-GET    /media/{session}/{id} # Download media binary
-POST   /transcribe           # Transcribe audio (Speaches)
-POST   /messages/import      # Import chat export
-```
-
-### Enrichment
-```
-POST /contacts/sync         # Sync contacts from WAHA
-POST /contacts/import       # Import Google Contacts CSV
-```
-
-### Auto-Reply (phone-scoped)
-```
-PUT    /contacts/{phone}/auto-reply  # Enable
-DELETE /contacts/{phone}/auto-reply  # Disable
-GET    /contacts/{phone}/auto-reply  # Check
-GET    /auto-replies                 # List all enabled contacts
-```
-
-## Server-Side Expert
-
-The home server at `192.168.31.154` is managed by another Claude Code instance. If you need:
-- Server-side debugging (container logs, network issues, config changes)
-- To modify the WAHA or Message Store stack
-- Info about other services on the server
+## Development and Tests
 
 ```bash
-ssh 192.168.31.154
-# Then run: claude
+npm ci
+npm test                 # hermetic unit/contract suite; no network or WhatsApp writes
+npm run build
+npm run test:live        # read-only live checks; requires WAHA_API_URL + WAHA_API_KEY
+WAHA_TEST_LEVEL=2 npm run test:live  # self-chat writes
+WAHA_TEST_LEVEL=3 npm run test:live  # configured contact writes; use deliberately
 ```
 
-## Knowledge Base
-Reference docs in `knowledge-base/`:
-- `waha-stack-reference.md` -- Server-side stack config, volumes, networking
-- `waha-dashboard-configuration.md` -- Auth layers, dashboard setup, CORE tier limits
-- `whatsapp-api-alternatives.md` -- Full research on WhatsApp API landscape (2026-03-29)
+## Release
 
-## Security Notes
-- API key gives full access -- treat it like a password
-- WhatsApp session = your personal phone number -- be careful with automated messaging
-- Rate limit sends to avoid WhatsApp detection/bans (unofficial API)
-- Never send to unknown numbers without user confirmation
-- Error messages strip internal IPs before returning to MCP clients
+The MCP is an npm stdio package, not a Docker service. Bump the package version,
+run tests/build/pack checks, commit, then push the matching `vX.Y.Z` tag. The tag
+workflow publishes `@marcos-heidemann/waha-mcp-server` after re-running tests/build.
+The backend is deployed independently through its Portainer-managed workflow.
+
+Do not add the unrelated untracked `tools.yaml` file to this repository.

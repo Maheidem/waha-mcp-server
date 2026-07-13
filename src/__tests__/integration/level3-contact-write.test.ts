@@ -10,7 +10,7 @@ import {
 } from "../helpers/live-server.js";
 
 // Gate: only run if WAHA_TEST_LEVEL >= 3
-const level = parseInt(process.env.WAHA_TEST_LEVEL || "2", 10);
+const level = parseInt(process.env.WAHA_TEST_LEVEL || "1", 10);
 const describeOrSkip = level >= 3 ? describe : describe.skip;
 
 describeOrSkip("Level 3 — Contact-write Tools (Mariana)", () => {
@@ -25,7 +25,7 @@ describeOrSkip("Level 3 — Contact-write Tools (Mariana)", () => {
   });
 
   afterAll(async () => {
-    await env.cleanup();
+    await env?.cleanup();
   });
 
   it("sends a text message to Mariana", async () => {

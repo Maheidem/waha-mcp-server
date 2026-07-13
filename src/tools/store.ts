@@ -7,16 +7,19 @@ import { parseApiError, mcpError } from "../utils/errors.js";
 /** Max length for free-text search inputs */
 const MAX_SEARCH_LENGTH = 500;
 
-/** Regex for valid WhatsApp JID formats (legacy aliases still accepted) */
-const JID_PATTERN = /^.+@(c\.us|g\.us|lid)$/;
-
 /** Contact identifier: phone digits (person), '*@g.us' (group), or legacy JID. */
-const CONTACT_ID_PATTERN = /^(\d{6,20}|.+@(c\.us|g\.us|lid))$/;
+const CONTACT_ID_PATTERN = /^(\d{6,20}|[^\s/]+@(c\.us|g\.us|lid))$/;
+const STORE_CHAT_ID_PATTERN = /^(\d{6,20}|[^\s/]+@(c\.us|g\.us|lid|import))$/;
 
 /** Zod refinement for the unified contact identifier */
 const contactIdSchema = z.string().min(1).max(200)
   .refine((v) => CONTACT_ID_PATTERN.test(v), {
     message: "Must be phone digits (person) or *@g.us (group)",
+  });
+
+const storeChatIdSchema = z.string().min(1).max(200)
+  .refine((v) => STORE_CHAT_ID_PATTERN.test(v), {
+    message: "Must be phone digits, a WhatsApp JID, or an imported *@import chat id",
   });
 
 /**
@@ -31,40 +34,41 @@ export function registerStoreTools(server: McpServer, api: ApiClient): void {
     "whatsapp_search_messages",
     {
       title: "Search WhatsApp Messages",
-      description: `Search across all WhatsApp message history. Supports full-text search,
-date ranges, sender filtering, and message type filtering.
+      description: `Search across all WhatsApp message history. Supports case-insensitive
+substring search, date ranges, sender filtering, and message type filtering.
 
 Args:
   - search: Text to search for (case insensitive, supports Portuguese/unicode)
-  - contactId: Scope search to one contact (phone digits or "*@g.us") (optional)
-  - sender: Filter by sender name or JID (optional)
+  - contactId: Scope to phone digits, a WhatsApp JID, or an imported "*@import" chat
+  - sender: Filter by sender name or exact phone digits (optional)
   - since: ISO date string — messages after this date (optional)
   - until: ISO date string — messages before this date (optional)
-  - type: Message type filter: chat, image, album, e2e_notification (optional)
+  - type: Stored message type (some current GOWS media is still labeled "chat")
   - fromMe: Filter sent (true) or received (false) messages (optional)
   - limit: Results per page (1-100, default 20)
   - offset: Pagination offset (default 0)
 
 Returns:
-  - messages: Array with id, chatJid, senderName, body, timestamp, messageType, fromMe
+  - messages: Array with original body plus contextualBody/contextNote when enhanced
   - total: Total matching messages
-  - has_more: Whether more results exist
+  - hasMore: Whether more results exist
 
-Note: sender_name may be null for some messages.`,
+Search also covers indexed media captions, filenames, OCR, AI summaries, tags,
+and extracted document text, so a matching media-only result can have body=null.`,
       inputSchema: {
         search: z.string().min(1).max(MAX_SEARCH_LENGTH)
           .describe("Text to search for (case insensitive)"),
-        contactId: contactIdSchema.optional()
-          .describe('Scope search to one contact: phone digits (person) or "*@g.us" (group). Optional.'),
+        contactId: storeChatIdSchema.optional()
+          .describe('Phone digits, a WhatsApp JID, or a returned "*@import" chat id (optional)'),
         sender: z.string().max(MAX_SEARCH_LENGTH).optional()
-          .describe("Filter by sender name or JID (optional)"),
+          .describe("Filter by sender name or exact phone digits (optional)"),
         since: z.string().max(30).optional()
           .describe("ISO date string — only messages after this date (optional)"),
         until: z.string().max(30).optional()
           .describe("ISO date string — only messages before this date (optional)"),
         type: z.string().max(50).optional()
-          .describe("Message type filter: chat, image, album, e2e_notification (optional)"),
-        fromMe: z.coerce.boolean().optional()
+          .describe('Stored message type; current GOWS media may still be labeled "chat"'),
+        fromMe: z.boolean().optional()
           .describe("Filter: true = sent, false = received (optional)"),
         limit: z.coerce.number().int().min(1).max(MAX_LIMIT).default(DEFAULT_LIMIT)
           .describe("Results per page (1-100, default 20)"),
@@ -99,6 +103,8 @@ Note: sender_name may be null for some messages.`,
             senderName: m.sender_name,
             senderJid: m.sender_jid,
             body: m.body,
+            contextualBody: m.body_contextual,
+            contextNote: m.context_note,
             timestamp: m.timestamp,
             messageType: m.message_type,
             fromMe: m.from_me,
@@ -205,19 +211,19 @@ Returns:
 including sender names and timestamps.
 
 This is optimized for readability — use whatsapp_read_messages for structured data
-with filtering, or whatsapp_search_messages for full-text search.
+with filtering, or whatsapp_search_messages for cross-chat substring search.
 
 Args:
   - contactId: Phone digits for a person, or "*@g.us" for a group
-  - limit: Number of recent messages to include (1-200, default 50)
+  - limit: Number of recent messages to include (1-100, default 50)
 
 Returns:
   - chat: Name, type, message count, date range
   - messages: Recent messages with sender name, body, timestamp, type`,
       inputSchema: {
         contactId: contactIdSchema.describe('Phone digits for a person, or "*@g.us" for a group'),
-        limit: z.coerce.number().int().min(1).max(200).default(50)
-          .describe("Number of recent messages to include (1-200, default 50)"),
+        limit: z.coerce.number().int().min(1).max(100).default(50)
+          .describe("Number of recent messages to include (1-100, default 50)"),
       },
       annotations: {
         readOnlyHint: true,
@@ -361,7 +367,10 @@ Returns:
   - total_parsed: Number of messages found in file
   - inserted: New messages added
   - skipped_duplicates: Messages already in store
-  - senders: List of sender names found`,
+  - senders: List of sender names found
+
+The returned *@import chat id can be used with whatsapp_read_messages and
+whatsapp_search_messages. The backend does not currently support it in chat_summary.`,
       inputSchema: {
         filePath: z.string().min(1)
           .describe("Absolute path to the WhatsApp export ZIP or TXT file on the server"),
@@ -381,8 +390,22 @@ Returns:
         const fs = await import("fs/promises");
         const path = await import("path");
 
-        const fileData = await fs.readFile(filePath);
-        const filename = path.basename(filePath);
+        const extension = path.extname(filePath).toLowerCase();
+        if (!new Set([".zip", ".txt"]).has(extension)) {
+          return mcpError("Chat import only accepts .zip or .txt files.");
+        }
+        const info = await fs.lstat(filePath);
+        if (!info.isFile() || info.isSymbolicLink()) {
+          return mcpError("Chat import path must be a regular file, not a directory or symlink.");
+        }
+        const maxBytes = 100 * 1024 * 1024;
+        if (info.size > maxBytes) {
+          return mcpError("Chat import file exceeds the 100 MiB safety limit.");
+        }
+
+        const realPath = await fs.realpath(filePath);
+        const fileData = await fs.readFile(realPath);
+        const filename = path.basename(realPath);
 
         const result = await api.importMessages(fileData, filename, chatName);
 
@@ -396,7 +419,8 @@ Returns:
               totalParsed: result.total_parsed,
               inserted: result.inserted,
               skippedDuplicates: result.skipped_duplicates,
-              contactsCreated: result.contacts_created,
+              phonesCreated: result.phones_created ?? result.contacts_created ?? 0,
+              contactsCreated: result.phones_created ?? result.contacts_created ?? 0,
               senders: result.senders,
             }, null, 2),
           }],

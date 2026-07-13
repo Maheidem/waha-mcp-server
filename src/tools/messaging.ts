@@ -6,6 +6,47 @@ import { parseApiError, mcpError } from "../utils/errors.js";
 const CONTACT_ID_DESC =
   'Contact id: phone digits for a person (e.g. "5521986910666"; survives @c.us↔@lid flips), or a group JID "*@g.us". Look up via whatsapp_list_contacts.';
 
+function idFromValue(value: unknown): string | null {
+  if (typeof value === "string" && value) return value;
+  if (value && typeof value === "object") {
+    const object = value as Record<string, unknown>;
+    if (typeof object._serialized === "string" && object._serialized) {
+      return object._serialized;
+    }
+    if (typeof object.id === "string" && object.id) return object.id;
+  }
+  return null;
+}
+
+/** Normalize the common WAHA sendText response shapes. */
+export function extractSentMessageId(response: unknown): string | null {
+  if (!response || typeof response !== "object") return null;
+  const object = response as Record<string, unknown>;
+  const data = object._data && typeof object._data === "object"
+    ? object._data as Record<string, unknown>
+    : undefined;
+  const key = object.key && typeof object.key === "object"
+    ? object.key as Record<string, unknown>
+    : undefined;
+  const dataKey = data?.key && typeof data.key === "object"
+    ? data.key as Record<string, unknown>
+    : undefined;
+
+  for (const candidate of [object.id, key?.id, data?.id, dataKey?.id]) {
+    const id = idFromValue(candidate);
+    if (id) return id;
+  }
+  return null;
+}
+
+function responseTimestamp(response: Record<string, unknown>): string {
+  const timestamp = response.timestamp;
+  if (typeof timestamp !== "number" || !Number.isFinite(timestamp)) {
+    return new Date().toISOString();
+  }
+  return new Date(timestamp > 1e12 ? timestamp : timestamp * 1000).toISOString();
+}
+
 export function registerMessagingTools(server: McpServer, api: ApiClient): void {
   server.registerTool(
     "whatsapp_send_text",
@@ -19,7 +60,8 @@ A rate limit delay is enforced between sends to avoid WhatsApp detection.
 Args:
   - contactId: ${CONTACT_ID_DESC}
   - text: Message text to send
-  - replyTo: Optional message ID to quote-reply to (get from whatsapp_read_messages)
+  - replyTo: Reserved for quote replies. The current backend cannot honor it and
+    the tool returns an error without sending when it is supplied.
 
 Returns:
   - status: "sent"
@@ -41,22 +83,29 @@ Returns:
     },
     async ({ contactId, text, replyTo }) => {
       try {
+        if (replyTo) {
+          return mcpError(
+            "Quoted manual sends are not supported by the current backend; no message was sent.",
+          );
+        }
         await api.throttleSend();
 
         const result = await api.sendText({
           contact_id: contactId,
           text,
           session: api.session,
-          ...(replyTo ? { reply_to: replyTo } : {}),
         });
 
+        const messageId = extractSentMessageId(result);
+
         const output = {
-          status: "sent",
-          messageId: result.id,
+          status: messageId ? "sent" : "accepted",
+          messageId,
           contactId,
-          timestamp: result.timestamp
-            ? new Date(result.timestamp * 1000).toISOString()
-            : new Date().toISOString(),
+          timestamp: responseTimestamp(result),
+          ...(!messageId ? {
+            warning: "Backend accepted the send but returned no recognizable message id.",
+          } : {}),
         };
 
         return {
@@ -220,10 +269,10 @@ Returns confirmation of deletion.`,
     "whatsapp_forward_message",
     {
       title: "Forward WhatsApp Message",
-      description: `Forward a message from one chat to another contact.
+      description: `Copy a stored text message into another contact's chat.
 
-The forwarded message shows a "Forwarded" label in WhatsApp and preserves
-the original sender attribution.
+The current backend re-sends the stored text as a new message. It does not preserve
+media, original sender attribution, or WhatsApp's "Forwarded" label.
 
 Args:
   - contactId: ${CONTACT_ID_DESC} — destination
@@ -252,14 +301,18 @@ Returns confirmation with forwarded message ID.`,
           session: api.session,
         });
 
+        const forwardedId = extractSentMessageId(result);
+
         const output = {
-          status: "forwarded",
-          messageId: result.id,
+          status: forwardedId ? "forwarded" : "accepted",
+          mode: "text_copy",
+          messageId: forwardedId,
           destinationContactId: contactId,
           originalMessageId: messageId,
-          timestamp: result.timestamp
-            ? new Date(result.timestamp * 1000).toISOString()
-            : new Date().toISOString(),
+          timestamp: responseTimestamp(result),
+          ...(!forwardedId ? {
+            warning: "Backend accepted the copy but returned no recognizable message id.",
+          } : {}),
         };
 
         return {

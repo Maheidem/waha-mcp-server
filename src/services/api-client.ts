@@ -1,4 +1,4 @@
-import axios, { type AxiosInstance } from "axios";
+import axios, { type AxiosAdapter, type AxiosInstance } from "axios";
 
 /**
  * Unified HTTP client for the Message Store API (:8200).
@@ -11,8 +11,12 @@ export class ApiClient {
   readonly baseUrl: string;
   private lastSendTime = 0;
   private readonly sendDelayMs: number;
+  private sendThrottle: Promise<void> = Promise.resolve();
 
-  constructor(config: { apiUrl: string; apiKey: string; session: string; sendDelayMs: number }) {
+  constructor(
+    config: { apiUrl: string; apiKey: string; session: string; sendDelayMs: number },
+    adapter?: AxiosAdapter,
+  ) {
     this.session = config.session;
     this.baseUrl = config.apiUrl;
     this.sendDelayMs = config.sendDelayMs;
@@ -25,6 +29,7 @@ export class ApiClient {
         "Accept": "application/json",
         "X-API-Key": config.apiKey,
       },
+      ...(adapter ? { adapter } : {}),
     });
   }
 
@@ -68,7 +73,7 @@ export class ApiClient {
   }
 
   async getMessage(id: string): Promise<unknown> {
-    const response = await this.http.get(`/messages/${id}`);
+    const response = await this.http.get(`/messages/${encodeURIComponent(id)}`);
     return response.data;
   }
 
@@ -85,12 +90,12 @@ export class ApiClient {
 
   async getContact(contactId: string): Promise<StoreContactDetail> {
     // Backend resolves digits / *@c.us / *@lid → person detail; *@g.us → group detail.
-    const response = await this.http.get<StoreContactDetail>(`/contacts/${contactId}`);
+    const response = await this.http.get<StoreContactDetail>(`/contacts/${encodeURIComponent(contactId)}`);
     return response.data;
   }
 
   async getContactGraph(phone: string): Promise<StoreContactGraph> {
-    const response = await this.http.get<StoreContactGraph>(`/contacts/${phone}/graph`);
+    const response = await this.http.get<StoreContactGraph>(`/contacts/${encodeURIComponent(phone)}/graph`);
     return response.data;
   }
 
@@ -105,17 +110,17 @@ export class ApiClient {
   }
 
   async getChat(jid: string): Promise<StoreChatDetail> {
-    const response = await this.http.get<StoreChatDetail>(`/chats/${jid}`);
+    const response = await this.http.get<StoreChatDetail>(`/chats/${encodeURIComponent(jid)}`);
     return response.data;
   }
 
   async getChatMembers(jid: string): Promise<unknown> {
-    const response = await this.http.get(`/chats/${jid}/members`);
+    const response = await this.http.get(`/chats/${encodeURIComponent(jid)}/members`);
     return response.data;
   }
 
   async getChatSummary(jid: string, limit?: number): Promise<StoreChatSummary> {
-    const response = await this.http.get<StoreChatSummary>(`/chats/${jid}/summary`, {
+    const response = await this.http.get<StoreChatSummary>(`/chats/${encodeURIComponent(jid)}/summary`, {
       params: limit ? { limit } : undefined,
     });
     return response.data;
@@ -132,7 +137,9 @@ export class ApiClient {
     limit?: number;
     offset?: number;
   }): Promise<unknown> {
-    const response = await this.http.get("/chats/live", { params });
+    const response = await this.http.get("/chats/live", {
+      params: { session: this.session, ...params },
+    });
     return response.data;
   }
 
@@ -141,12 +148,18 @@ export class ApiClient {
     offset?: number;
     downloadMedia?: boolean;
   }): Promise<unknown> {
-    const response = await this.http.get(`/chats/${contactId}/messages/live`, { params });
+    const response = await this.http.get(`/chats/${encodeURIComponent(contactId)}/messages/live`, {
+      params: { session: this.session, ...params },
+    });
     return response.data;
   }
 
   async markAsRead(contactId: string): Promise<unknown> {
-    const response = await this.http.post(`/chats/${contactId}/messages/read`);
+    const response = await this.http.post(
+      `/chats/${encodeURIComponent(contactId)}/messages/read`,
+      undefined,
+      { params: { session: this.session } },
+    );
     return response.data;
   }
 
@@ -164,13 +177,15 @@ export class ApiClient {
     limit?: number;
     offset?: number;
   }): Promise<unknown> {
-    const response = await this.http.get("/contacts/all", { params });
+    const response = await this.http.get("/contacts/all", {
+      params: { session: this.session, ...params },
+    });
     return response.data;
   }
 
   async checkNumber(phone: string): Promise<{ numberExists: boolean; chatId: string }> {
     const response = await this.http.get<{ numberExists: boolean; chatId: string }>("/contacts/check", {
-      params: { phone },
+      params: { phone, session: this.session },
     });
     return response.data;
   }
@@ -182,8 +197,8 @@ export class ApiClient {
     text: string;
     session?: string;
     reply_to?: string;
-  }): Promise<{ id: string; timestamp?: number }> {
-    const response = await this.http.post<{ id: string; timestamp?: number }>("/messages/send", body);
+  }): Promise<Record<string, unknown>> {
+    const response = await this.http.post<Record<string, unknown>>("/messages/send", body);
     return response.data;
   }
 
@@ -207,7 +222,7 @@ export class ApiClient {
   }
 
   async deleteMessage(id: string, contactId?: string, session?: string): Promise<unknown> {
-    const response = await this.http.delete(`/messages/${id}`, {
+    const response = await this.http.delete(`/messages/${encodeURIComponent(id)}`, {
       params: { ...(contactId ? { contact_id: contactId } : {}), ...(session ? { session } : {}) },
     });
     return response.data;
@@ -217,16 +232,19 @@ export class ApiClient {
     message_id: string;
     contact_id: string;
     session?: string;
-  }): Promise<{ id: string; timestamp?: number }> {
-    const response = await this.http.post<{ id: string; timestamp?: number }>("/messages/forward", body);
+  }): Promise<Record<string, unknown>> {
+    const response = await this.http.post<Record<string, unknown>>("/messages/forward", body);
     return response.data;
   }
 
   async downloadMedia(session: string, fileId: string): Promise<{ data: Buffer; mimeType: string }> {
-    const response = await this.http.get(`/media/${session}/${fileId}`, {
+    const response = await this.http.get(
+      `/media/${encodeURIComponent(session)}/${encodeURIComponent(fileId)}`,
+      {
       responseType: "arraybuffer",
       headers: { Accept: "*/*" },
-    });
+      },
+    );
     return {
       data: Buffer.from(response.data as ArrayBuffer),
       mimeType: (response.headers["content-type"] as string) || "application/octet-stream",
@@ -237,9 +255,84 @@ export class ApiClient {
     message_id?: string;
     media_url?: string;
     language?: string;
+    prompt?: string;
   }): Promise<unknown> {
-    const response = await this.http.post("/transcribe", body);
+    // The backend may walk multiple ASR fallbacks with a 120-second timeout
+    // each, so the generic 30-second request timeout is too short here.
+    const response = await this.http.post("/transcribe", body, { timeout: 600000 });
     return response.data;
+  }
+
+  async textToSpeech(body: {
+    text: string;
+    voice?: string;
+    model?: string;
+    response_format?: string;
+  }): Promise<{ data: Buffer; mimeType: string }> {
+    const response = await this.http.post<ArrayBuffer>("/tts", body, {
+      responseType: "arraybuffer",
+      headers: { Accept: "audio/*" },
+      timeout: 90000,
+    });
+    return {
+      data: Buffer.from(response.data),
+      mimeType: (response.headers["content-type"] as string) || "audio/mpeg",
+    };
+  }
+
+  // ── Conversation automation ──────────────────────────────────────
+
+  async getAutoReply(contactId: string): Promise<AutoReplyState> {
+    return this.get<AutoReplyState>(`/contacts/${encodeURIComponent(contactId)}/auto-reply`);
+  }
+
+  async setAutoReply(contactId: string, contextual?: boolean): Promise<AutoReplyState> {
+    return this.put<AutoReplyState>(
+      `/contacts/${encodeURIComponent(contactId)}/auto-reply`,
+      contextual === undefined ? undefined : { contextual },
+    );
+  }
+
+  async disableAutoReply(contactId: string): Promise<AutoReplyState> {
+    return this.delete<AutoReplyState>(`/contacts/${encodeURIComponent(contactId)}/auto-reply`);
+  }
+
+  async listAutoReplies(): Promise<AutoReplyList> {
+    return this.get<AutoReplyList>("/auto-replies");
+  }
+
+  async getMediaSettings(contactId: string): Promise<MediaSettingsResponse> {
+    return this.get<MediaSettingsResponse>(
+      `/contacts/${encodeURIComponent(contactId)}/media-settings`,
+    );
+  }
+
+  async updateMediaSettings(
+    contactId: string,
+    settings: Partial<MediaSettings>,
+  ): Promise<MediaSettingsResponse> {
+    return this.put<MediaSettingsResponse>(
+      `/contacts/${encodeURIComponent(contactId)}/media-settings`,
+      settings as Record<string, unknown>,
+    );
+  }
+
+  async disableMediaSettings(contactId: string): Promise<MediaSettingsResponse> {
+    return this.delete<MediaSettingsResponse>(
+      `/contacts/${encodeURIComponent(contactId)}/media-settings`,
+    );
+  }
+
+  async getMediaHealth(): Promise<Record<string, unknown>> {
+    return this.get<Record<string, unknown>>("/media/health");
+  }
+
+  async getWorkerHealth(): Promise<Record<string, unknown>> {
+    return this.get<Record<string, unknown>>("/worker/health");
+  }
+
+  async getListenerHealth(): Promise<Record<string, unknown>> {
+    return this.get<Record<string, unknown>>("/listener/health");
   }
 
   // ── Enrichment ─────────────────────────────────────────────────
@@ -268,7 +361,8 @@ export class ApiClient {
     total_parsed: number;
     inserted: number;
     skipped_duplicates: number;
-    contacts_created: number;
+    phones_created?: number;
+    contacts_created?: number;
     senders: string[];
   }> {
     const formData = new FormData();
@@ -284,8 +378,12 @@ export class ApiClient {
 
   // ── Health ─────────────────────────────────────────────────────
 
-  async getHealth(): Promise<{ status: string }> {
-    const response = await this.http.get<{ status: string }>("/health");
+  async getHealth(): Promise<{ status: string; database?: boolean; waha_live?: boolean }> {
+    const response = await this.http.get<{
+      status: string;
+      database?: boolean;
+      waha_live?: boolean;
+    }>("/health");
     return response.data;
   }
 
@@ -296,12 +394,15 @@ export class ApiClient {
    * Call this before any send operation.
    */
   async throttleSend(): Promise<void> {
-    const now = Date.now();
-    const elapsed = now - this.lastSendTime;
-    if (elapsed < this.sendDelayMs) {
-      await new Promise((resolve) => setTimeout(resolve, this.sendDelayMs - elapsed));
-    }
-    this.lastSendTime = Date.now();
+    const turn = this.sendThrottle.then(async () => {
+      const elapsed = Date.now() - this.lastSendTime;
+      if (elapsed < this.sendDelayMs) {
+        await new Promise((resolve) => setTimeout(resolve, this.sendDelayMs - elapsed));
+      }
+      this.lastSendTime = Date.now();
+    });
+    this.sendThrottle = turn.catch(() => {});
+    await turn;
   }
 }
 
@@ -312,6 +413,8 @@ export interface StoreMessage {
   chat_jid: string;
   timestamp: string;
   body: string | null;
+  body_contextual: string | null;
+  context_note: string | null;
   message_type: string;
   from_me: boolean;
   has_media: boolean;
@@ -321,6 +424,51 @@ export interface StoreMessage {
   is_edited: boolean;
   sender_name: string | null;
   sender_jid: string;
+}
+
+export interface AutoReplyState {
+  id?: string;
+  phone?: string;
+  kind?: "person" | "group";
+  found?: boolean;
+  enabled: boolean;
+  contextual?: boolean;
+  status?: string;
+}
+
+export interface AutoReplyList {
+  contacts: Array<{
+    phone: string;
+    display_name: string;
+    person_name: string | null;
+    push_name: string | null;
+  }>;
+  groups?: Array<{
+    jid: string;
+    display_name: string;
+  }>;
+}
+
+export interface MediaSettings {
+  capture_enabled: boolean;
+  analyze_images: boolean;
+  analyze_documents: boolean;
+  whatsapp_reply_enabled: boolean;
+  archive_mode: "off" | "review" | "auto";
+  fixed_nextcloud_folder_id: number | null;
+  include_media_in_recap: boolean;
+  archive_confirmation_enabled: boolean;
+  allow_sensitive_processing: boolean;
+  ask_on_review: boolean;
+}
+
+export interface MediaSettingsResponse {
+  status?: string;
+  scope_type: "phone" | "chat";
+  scope_id: string;
+  found?: boolean;
+  settings: MediaSettings & Record<string, unknown>;
+  warnings?: string[];
 }
 
 export interface StoreMessageSearchResult {

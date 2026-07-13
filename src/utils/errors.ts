@@ -22,14 +22,26 @@ export function parseApiError(error: unknown): string {
     }
 
     switch (status) {
+      case 400:
+        return `Invalid request: ${stripInternalIps(msg) || "Check the supplied values."}`;
       case 401:
         return "API key rejected. Check WAHA_API_KEY environment variable.";
+      case 403:
+        return "API access forbidden for this client.";
       case 404:
         return `Not found: ${stripInternalIps(msg) || "Check the ID or JID."}`;
+      case 409:
+        return `Request conflict: ${stripInternalIps(msg) || "The requested state is unavailable."}`;
       case 422:
         return `Invalid request: ${stripInternalIps(msg)}`;
+      case 429:
+        return "API rate limit reached. Wait before retrying.";
       case 500:
         return `API server error: ${stripInternalIps(msg) || "Internal error"}`;
+      case 502:
+      case 503:
+      case 504:
+        return `Backend service unavailable: ${stripInternalIps(msg) || "Try again later."}`;
       default:
         return stripInternalIps(`API error (${status}): ${msg || error.message}`);
     }
@@ -49,16 +61,20 @@ export function parseApiError(error: unknown): string {
 function sanitizeForLog(error: unknown): string {
   if (axios.isAxiosError(error)) {
     const status = error.response?.status ?? "no response";
-    const msg = (error.response?.data as Record<string, unknown>)?.message ?? error.message;
-    return `[${status}] ${msg}`;
+    const data = error.response?.data as Record<string, unknown> | undefined;
+    const msg = data?.detail ?? data?.message ?? error.message;
+    return stripInternalIps(`[${status}] ${typeof msg === "string" ? msg : JSON.stringify(msg)}`);
   }
-  if (error instanceof Error) return error.message;
-  return String(error);
+  if (error instanceof Error) return stripInternalIps(error.message);
+  return stripInternalIps(String(error));
 }
 
 /** Remove internal IP addresses from user-facing error messages */
 function stripInternalIps(message: string): string {
-  return message.replace(/\b(?:10|172\.(?:1[6-9]|2\d|3[01])|192\.168)\.\d{1,3}\.\d{1,3}(:\d+)?\b/g, "<internal>");
+  return message.replace(
+    /\b(?:10(?:\.\d{1,3}){3}|172\.(?:1[6-9]|2\d|3[01])(?:\.\d{1,3}){2}|192\.168(?:\.\d{1,3}){2})(?::\d+)?\b/g,
+    "<internal>",
+  );
 }
 
 /**

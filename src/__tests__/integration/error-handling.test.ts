@@ -15,7 +15,7 @@ describe("Error Handling", () => {
   });
 
   afterAll(async () => {
-    await env.cleanup();
+    await env?.cleanup();
   });
 
   // ─── Input validation ──────────────────────────────────────────

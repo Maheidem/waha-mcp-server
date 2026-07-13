@@ -32,7 +32,7 @@ describe("Message Store Tools", () => {
   });
 
   afterAll(async () => {
-    await env.cleanup();
+    await env?.cleanup();
   });
 
   // ─── whatsapp_search_messages ──────────────────────────────────
@@ -66,7 +66,7 @@ describe("Message Store Tools", () => {
         messages: Array<{
           id: string;
           chatJid: string;
-          body: string;
+          body: string | null;
           timestamp: string;
           messageType: string;
           fromMe: boolean;
@@ -76,7 +76,7 @@ describe("Message Store Tools", () => {
         expect(typeof msg.id).toBe("string");
         expect(msg.id.length).toBeGreaterThan(0);
         expect(typeof msg.chatJid).toBe("string");
-        expect(typeof msg.body).toBe("string");
+        expect(msg.body === null || typeof msg.body === "string").toBe(true);
         expect(typeof msg.timestamp).toBe("string");
         expect(typeof msg.messageType).toBe("string");
         expect(typeof msg.fromMe).toBe("boolean");
@@ -110,16 +110,23 @@ describe("Message Store Tools", () => {
     });
 
     it("contactId filter scopes to a specific chat", async () => {
+      const detailResult = await client.callTool({
+        name: "whatsapp_get_contact",
+        arguments: { contactId: SELF_PHONE },
+      });
+      const detail = parseToolResult(detailResult) as { jids?: string[] };
+      const acceptedJids = new Set([SELF_CHAT_ID, ...(detail.jids ?? [])]);
+
       const result = await client.callTool({
         name: "whatsapp_search_messages",
-        arguments: { search: "test", contactId: SELF_CHAT_ID, limit: 5 },
+        arguments: { search: "test", contactId: SELF_PHONE, limit: 5 },
       });
       expect(result.isError).toBeFalsy();
       const parsed = parseToolResult(result) as {
         messages: Array<{ chatJid: string }>;
       };
       for (const msg of parsed.messages) {
-        expect(msg.chatJid).toBe(SELF_CHAT_ID);
+        expect(acceptedJids.has(msg.chatJid)).toBe(true);
       }
     });
 

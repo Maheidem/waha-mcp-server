@@ -110,49 +110,51 @@ Returns array of chats with:
       description: `Read messages from a specific WhatsApp chat.
 
 Returns messages with sender, text content, timestamp, and message ID.
-Use the message ID from results for whatsapp_react or reply_to in whatsapp_send_text.
+Use the message ID from results for whatsapp_react, media download, or transcription.
 
-Powered by Message Store — persistent full history with full-text search and sender filtering.
+Powered by Message Store — persistent history with case-insensitive substring search.
+Search includes indexed captions, filenames, OCR, summaries, tags, and document text.
 
 Args:
-  - contactId: Phone digits for a person ("5521986910666"; survives @c.us↔@lid flips), or group JID "*@g.us". Look up via whatsapp_list_contacts.
+  - contactId: Phone digits for a person, group JID "*@g.us", or an imported "*@import" history id
   - limit: Number of messages to return (1-100, default 20)
   - offset: Skip N messages for pagination (default 0)
-  - search: Full-text search within this chat's messages (optional)
-  - sender: Filter by sender name or JID (optional)
-  - type: Filter by message type: chat, image, album (optional)
+  - search: Case-insensitive substring search within this chat (optional)
+  - sender: Filter by sender name or exact phone digits (optional)
+  - type: Stored message type; current GOWS media may still be labeled "chat" (optional)
   - since: ISO date — messages after this date (optional)
   - until: ISO date — messages before this date (optional)
   - fromMe: Filter sent (true) or received (false) messages (optional)
   - downloadMedia: Include media download URLs when falling back to live (default false)
-  - markAsRead: Mark messages as read after fetching (default false)
+  - markAsRead: Mark live WhatsApp messages as read after fetching; imported history is skipped (default false)
 
 Returns:
   - messages: Array with id, sender, body, timestamp, type, fromMe, hasMedia
   - total: Total matching messages
   - hasMore: Whether more results exist`,
       inputSchema: {
-        contactId: z.string().min(1).describe('Phone digits for a person, or "*@g.us" for a group'),
+        contactId: z.string().min(1)
+          .describe('Phone digits, a group "*@g.us", or an imported "*@import" history id'),
         limit: z.coerce.number().int().min(1).max(MAX_LIMIT).default(DEFAULT_LIMIT)
           .describe("Number of messages to return (1-100, default 20)"),
         offset: z.coerce.number().int().min(0).default(0)
           .describe("Skip N messages for pagination (default 0)"),
         search: z.string().max(500).optional()
-          .describe("Full-text search within this chat (optional)"),
+          .describe("Case-insensitive substring search within this chat (optional)"),
         sender: z.string().max(500).optional()
-          .describe("Filter by sender name or JID (optional)"),
+          .describe("Filter by sender name or exact phone digits (optional)"),
         type: z.string().max(50).optional()
-          .describe("Filter by message type: chat, image, album (optional)"),
+          .describe('Stored message type; current GOWS media may still be labeled "chat"'),
         since: z.string().max(30).optional()
           .describe("ISO date — only messages after this date (optional)"),
         until: z.string().max(30).optional()
           .describe("ISO date — only messages before this date (optional)"),
-        fromMe: z.coerce.boolean().optional()
+        fromMe: z.boolean().optional()
           .describe("Filter: true = sent, false = received (optional)"),
-        downloadMedia: z.coerce.boolean().default(false)
+        downloadMedia: z.boolean().default(false)
           .describe("Include media download URLs when falling back to live (default false)"),
-        markAsRead: z.coerce.boolean().default(false)
-          .describe("Mark messages as read after fetching (default false)"),
+        markAsRead: z.boolean().default(false)
+          .describe("Mark live WhatsApp messages as read; skipped for imported history"),
       },
       annotations: {
         readOnlyHint: false,
@@ -171,9 +173,11 @@ Returns:
             downloadMedia,
           }) as { messages: Array<Record<string, unknown>> };
           const liveData = liveResp.messages || [];
+          let markedAsRead = false;
 
           if (markAsRead && liveData.length > 0) {
-            api.markAsRead(contactId).catch(() => {});
+            await api.markAsRead(contactId);
+            markedAsRead = true;
           }
 
           return {
@@ -192,7 +196,7 @@ Returns:
             offset,
             hasMore: liveData.length === limit,
             source: "live" as const,
-            ...(markAsRead ? { markedAsRead: true } : {}),
+            ...(markAsRead ? { markedAsRead } : {}),
           };
         };
 
@@ -212,7 +216,8 @@ Returns:
         // If Store returns empty for a DM chat (offset 0, no filters),
         // fall back to live — the Store may not have this chat's messages
         // (e.g., self-chat, or chat predates webhook capture).
-        const isDm = !contactId.endsWith("@g.us"); // digits or @c.us / @lid all = DM
+        const isImported = contactId.endsWith("@import");
+        const isDm = !contactId.endsWith("@g.us") && !isImported;
         const hasFilters = search || sender || type || since || until || fromMe !== undefined;
         if (data.messages.length === 0 && isDm && offset === 0 && !hasFilters) {
           const liveResult = await queryLive();
@@ -237,6 +242,8 @@ Returns:
             senderJid: m.sender_jid,
             fromMe: m.from_me,
             body: m.body,
+            contextualBody: m.body_contextual,
+            contextNote: m.context_note,
             timestamp: m.timestamp,
             messageType: m.message_type,
             hasMedia: m.has_media,
@@ -251,6 +258,20 @@ Returns:
           hasMore: data.has_more,
           source: "message-store" as const,
         };
+
+        if (markAsRead) {
+          if (isImported) {
+            Object.assign(result, {
+              markedAsRead: false,
+              markAsReadWarning: "Imported history has no live WhatsApp chat to mark as read.",
+            });
+          } else if (data.messages.length > 0) {
+            await api.markAsRead(contactId);
+            Object.assign(result, { markedAsRead: true });
+          } else {
+            Object.assign(result, { markedAsRead: false });
+          }
+        }
 
         let text = JSON.stringify(result, null, 2);
         if (text.length > CHARACTER_LIMIT) {

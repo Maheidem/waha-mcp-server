@@ -31,8 +31,12 @@ jobs:
       - name: Type-check
         run: npx tsc --noEmit
 
+      - name: Unit tests
+        if: matrix.node-version != 18
+        run: npm test
+
       - name: Build
         run: npm run build
 
-      - name: Verify dist entry point
-        run: node dist/index.js --help 2>&1 || true
+      - name: Verify package contents
+        run: npm pack --dry-run

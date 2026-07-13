@@ -18,7 +18,7 @@ describe("Level 1 — Read-only Tools", () => {
   });
 
   afterAll(async () => {
-    await env.cleanup();
+    await env?.cleanup();
   });
 
   // ─── whatsapp_session_status ────────────────────────────────────
@@ -243,7 +243,7 @@ describe("Level 1 — Read-only Tools", () => {
       }
     });
 
-    it("search filter returns only matching messages", async () => {
+    it("search filter returns message-store results, including possible media-rollup matches", async () => {
       const result = await client.callTool({
         name: "whatsapp_read_messages",
         arguments: { contactId: SELF_CHAT_ID, search: "test", limit: 5 },
@@ -253,14 +253,8 @@ describe("Level 1 — Read-only Tools", () => {
         source: string;
         messages: Array<{ body: string | null }>;
       };
-      // Store source should filter; live fallback may not support search
-      if (parsed.source === "message-store") {
-        for (const msg of parsed.messages) {
-          if (msg.body) {
-            expect(msg.body.toLowerCase()).toContain("test");
-          }
-        }
-      }
+      expect(parsed.source).toBe("message-store");
+      expect(Array.isArray(parsed.messages)).toBe(true);
     });
 
     it("fromMe=true returns only sent messages", async () => {
@@ -344,17 +338,19 @@ describe("Level 1 — Read-only Tools", () => {
       expect(result.isError).toBeFalsy();
       const parsed = parseToolResult(result) as {
         contacts: Array<{
+          kind: "person" | "group";
           id: string;
           name: string;
-          pushName: string | null;
-          googleName: string | null;
-          phone: string;
-          email: string | null;
-          organization: string | null;
+          pushName?: string | null;
+          googleName?: string | null;
+          phone?: string;
+          email?: string | null;
+          organization?: string | null;
           messageCount: number;
-          chatsCount: number;
-          firstSeen: string;
-          lastSeen: string;
+          chatsCount?: number;
+          memberCount?: number;
+          firstSeen?: string | null;
+          lastSeen?: string | null;
         }>;
         source: string;
       };
@@ -363,13 +359,17 @@ describe("Level 1 — Read-only Tools", () => {
       expect(parsed.source).toBe("message-store");
       for (const contact of parsed.contacts) {
         expect(typeof contact.id).toBe("string");
-        // id is now the phone number
-        expect(contact.id).toBe(contact.phone);
         expect(typeof contact.name).toBe("string");
         expect(typeof contact.messageCount).toBe("number");
-        expect(typeof contact.chatsCount).toBe("number");
-        expect(typeof contact.firstSeen).toBe("string");
-        expect(typeof contact.lastSeen).toBe("string");
+        if (contact.kind === "person") {
+          expect(contact.id).toBe(contact.phone);
+          expect(typeof contact.chatsCount).toBe("number");
+          expect(contact.firstSeen === null || typeof contact.firstSeen === "string").toBe(true);
+          expect(contact.lastSeen === null || typeof contact.lastSeen === "string").toBe(true);
+        } else {
+          expect(contact.id).toMatch(/@g\.us$/);
+          expect(typeof contact.memberCount).toBe("number");
+        }
       }
     });
 
@@ -389,11 +389,11 @@ describe("Level 1 — Read-only Tools", () => {
     it("pagination works", async () => {
       const r1 = await client.callTool({
         name: "whatsapp_list_contacts",
-        arguments: { limit: 1, offset: 0 },
+        arguments: { kind: "person", limit: 1, offset: 0 },
       });
       const r2 = await client.callTool({
         name: "whatsapp_list_contacts",
-        arguments: { limit: 1, offset: 1 },
+        arguments: { kind: "person", limit: 1, offset: 1 },
       });
       const p1 = parseToolResult(r1) as { contacts: Array<{ id: string }> };
       const p2 = parseToolResult(r2) as { contacts: Array<{ id: string }> };
@@ -470,6 +470,56 @@ describe("Level 1 — Read-only Tools", () => {
       expect(parsed.chat.chat_type).toBe("group");
       expect(Array.isArray(parsed.members)).toBe(true);
       expect(parsed.member_count).toBeGreaterThan(0);
+    });
+  });
+
+  // ─── current backend automation contracts ─────────────────────────────
+  describe("automation read-only tools", () => {
+    it("reports combined backend automation health", async () => {
+      const result = await client.callTool({
+        name: "whatsapp_automation_health",
+        arguments: {},
+      });
+      expect(result.isError).toBeFalsy();
+      const parsed = parseToolResult(result) as {
+        status: string;
+        probes: Record<string, { available: boolean }>;
+      };
+      expect(["healthy", "degraded"]).toContain(parsed.status);
+      expect(Object.keys(parsed.probes)).toEqual(["backend", "listener", "media", "worker"]);
+    });
+
+    it("reads self media automation settings without changing them", async () => {
+      const result = await client.callTool({
+        name: "whatsapp_media_settings_get",
+        arguments: { contactId: SELF_PHONE },
+      });
+      expect(result.isError).toBeFalsy();
+      const parsed = parseToolResult(result) as {
+        scope_type: string;
+        scope_id: string;
+        settings: Record<string, unknown>;
+      };
+      expect(parsed.scope_type).toBe("phone");
+      expect(parsed.scope_id).toBe(SELF_PHONE);
+      expect(parsed.settings).toBeTruthy();
+    });
+
+    it("lists person and group auto-reply entries", async () => {
+      const result = await client.callTool({
+        name: "whatsapp_auto_reply_list",
+        arguments: {},
+      });
+      expect(result.isError).toBeFalsy();
+      const parsed = parseToolResult(result) as {
+        autoReplies: unknown[];
+        contacts: unknown[];
+        groups: unknown[];
+        count: number;
+      };
+      expect(Array.isArray(parsed.contacts)).toBe(true);
+      expect(Array.isArray(parsed.groups)).toBe(true);
+      expect(parsed.count).toBe(parsed.autoReplies.length);
     });
   });
 });

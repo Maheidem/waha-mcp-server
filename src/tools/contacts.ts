@@ -64,8 +64,8 @@ Use the returned 'id' as contactId in any chat-targeting tool (send_text, read_m
 Args:
   - kind: "person" | "group" | "all" (default "all")
   - search: Filter by name or id (optional)
-  - limit: Maximum rows to return (1-100, default 20)
-  - offset: Pagination offset for the persons section (default 0)
+  - limit: Rows per kind (1-100, default 20); "all" can return up to twice this
+  - offset: Pagination offset for people; groups are always the backend's first page (default 0)
 
 Returns array of contacts with:
   - kind: "person" | "group"
@@ -80,7 +80,7 @@ Returns array of contacts with:
         search: z.string().max(500).optional()
           .describe("Filter by name or id (optional)"),
         limit: z.coerce.number().int().min(1).max(MAX_LIMIT).default(DEFAULT_LIMIT)
-          .describe("Maximum rows to return (1-100, default 20)"),
+          .describe("Rows per kind (1-100, default 20); 'all' applies it to people and groups"),
         offset: z.coerce.number().int().min(0).default(0)
           .describe("Pagination offset (default 0)"),
       },
@@ -94,9 +94,18 @@ Returns array of contacts with:
     async ({ kind, search, limit, offset }) => {
       try {
         const contacts = await api.listContacts({ kind, search, limit, offset });
+        // Chat imports create synthetic phone rows such as import_<hash>. They are
+        // useful for history attribution but are not valid targets for any live
+        // WhatsApp route, so do not advertise them as actionable contacts.
+        const actionableContacts = contacts.filter((contact) => {
+          if (contact.kind !== "person") return true;
+          const id = contact.id ?? contact.phone ?? "";
+          return /^\d{6,20}$/.test(id);
+        });
+        const historyOnlyExcluded = contacts.length - actionableContacts.length;
 
         const result = {
-          contacts: contacts.map((c) => ({
+          contacts: actionableContacts.map((c) => ({
             kind: c.kind,
             id: c.id ?? c.phone, // fallback for any older response shape
             name: c.display_name ?? c.person_name ?? c.push_name ?? c.phone ?? c.id,
@@ -107,16 +116,28 @@ Returns array of contacts with:
               email: c.email,
               organization: c.organization,
               chatsCount: c.chats_count,
+              firstSeen: c.first_seen_at,
+              lastSeen: c.last_seen_at,
             } : {
               memberCount: c.member_count,
             }),
             messageCount: c.message_count,
             lastMessageAt: c.last_message_at,
           })),
-          count: contacts.length,
+          count: actionableContacts.length,
           kind,
           offset,
-          hasMore: contacts.length === limit,
+          // The backend applies offset only to people and mixes up to `limit`
+          // people plus `limit` groups for kind=all, so a single boolean would
+          // be misleading for the combined view.
+          hasMore: kind === "all" ? null : contacts.length >= limit,
+          ...(kind === "all" ? {
+            paginationNote: "For deterministic pagination, request kind='person'. Groups are returned as the first page by the current backend.",
+          } : {}),
+          ...(historyOnlyExcluded > 0 ? {
+            historyOnlyExcluded,
+            exclusionNote: "Imported sender identities were omitted because they cannot target live WhatsApp tools.",
+          } : {}),
           source: "message-store" as const,
         };
 

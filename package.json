@@ -1,6 +1,6 @@
 {
   "name": "@marcos-heidemann/waha-mcp-server",
-  "version": "2.3.0",
+  "version": "2.4.0",
   "description": "MCP server for WhatsApp messaging via WAHA REST API",
   "type": "module",
   "main": "dist/index.js",
@@ -18,7 +18,7 @@
     "start": "node dist/index.js",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:live": "vitest run --reporter=verbose",
+    "test:live": "vitest run --config vitest.live.config.ts --reporter=verbose",
     "prepublishOnly": "npm run build"
   },
   "keywords": [

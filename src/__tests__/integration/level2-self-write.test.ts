@@ -9,7 +9,10 @@ import {
   type LiveServer,
 } from "../helpers/live-server.js";
 
-describe("Level 2 — Self-write Tools", () => {
+const level = parseInt(process.env.WAHA_TEST_LEVEL || "1", 10);
+const describeOrSkip = level >= 2 ? describe : describe.skip;
+
+describeOrSkip("Level 2 — Self-write Tools", () => {
   let env: LiveServer;
   let client: Client;
   let marker: string;
@@ -21,7 +24,7 @@ describe("Level 2 — Self-write Tools", () => {
   });
 
   afterAll(async () => {
-    await env.cleanup();
+    await env?.cleanup();
   });
 
   // ─── whatsapp_send_text ────────────────────────────────────────
@@ -73,7 +76,7 @@ describe("Level 2 — Self-write Tools", () => {
   });
 
   // ─── whatsapp_send_text with replyTo ───────────────────────────
-  it("sends a reply-to message referencing the first message", async () => {
+  it("rejects unsupported quote replies without sending", async () => {
     expect(sharedState.selfSentMessageId).toBeTruthy();
 
     const result = await client.callTool({
@@ -84,14 +87,7 @@ describe("Level 2 — Self-write Tools", () => {
         replyTo: sharedState.selfSentMessageId,
       },
     });
-    expect(result.isError).toBeFalsy();
-    const parsed = parseToolResult(result) as {
-      status: string;
-      messageId: string;
-    };
-    expect(parsed.status).toBe("sent");
-    expect(parsed.messageId).toBeTruthy();
-    sharedState.selfReplyMessageId = parsed.messageId;
+    expect(result.isError).toBe(true);
   });
 
   // ─── whatsapp_react ────────────────────────────────────────────
@@ -192,26 +188,26 @@ describe("Level 2 — Self-write Tools", () => {
     const parsed = parseToolResult(result) as {
       status: string;
       messageId: string;
-      destinationChatId: string;
+      destinationContactId: string;
       originalMessageId: string;
       timestamp: string;
     };
     expect(parsed.status).toBe("forwarded");
     expect(parsed.messageId).toBeTruthy();
-    expect(parsed.destinationChatId).toBe(SELF_CHAT_ID);
+    expect(parsed.destinationContactId).toBe(SELF_CHAT_ID);
     expect(parsed.originalMessageId).toBe(sent.messageId);
     expect(new Date(parsed.timestamp).getTime()).not.toBeNaN();
   });
 
   // ─── whatsapp_delete_message ───────────────────────────────────
-  it("deletes the reply message", async () => {
-    expect(sharedState.selfReplyMessageId).toBeTruthy();
+  it("deletes the original test message", async () => {
+    expect(sharedState.selfSentMessageId).toBeTruthy();
 
     const result = await client.callTool({
       name: "whatsapp_delete_message",
       arguments: {
         contactId: SELF_CHAT_ID,
-        messageId: sharedState.selfReplyMessageId!,
+        messageId: sharedState.selfSentMessageId!,
       },
     });
     expect(result.isError).toBeFalsy();
@@ -222,7 +218,7 @@ describe("Level 2 — Self-write Tools", () => {
     };
     expect(parsed.status).toBe("deleted");
     expect(parsed.contactId).toBe(SELF_CHAT_ID);
-    expect(parsed.messageId).toBe(sharedState.selfReplyMessageId);
+    expect(parsed.messageId).toBe(sharedState.selfSentMessageId);
   });
 
   // ─── whatsapp_read_messages with markAsRead ────────────────────
